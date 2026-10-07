@@ -36,7 +36,7 @@
       <div class="card pad-lg">
         <h3>System</h3>
         <div class="kv">
-          <div><small>Database</small><b>{{ config.get('DB_LABEL', 'SQLite') }}</b></div><div><small>AI engine</small><b>{{ "Claude API" if config.get('AI_MODE') == 'llm' else "Built-in, or Claude with a key" }}</b></div>
+          <div><small>Database</small><b>{{ config.get('DB_LABEL', 'SQLite') }}</b>{% if config.get('DATA_AT_RISK') %}<br><span class="pill rose">Not permanent: add DATABASE_URL</span>{% else %}<br><span class="pill green">Saved permanently</span>{% endif %}</div><div><small>AI engine</small><b>{{ "Claude API" if config.get('AI_MODE') == 'llm' else "Built-in, or Claude with a key" }}</b></div>
           <div><small>Uploads stored in</small><b>{{ "the database" if config.get('DB_BACKEND') == 'postgres' else "instance/uploads" }}</b></div><div><small>Health check</small><b><a class="link" href="{{ url_for('healthz') }}">/healthz</a></b></div>
         </div>
         <p class="tiny muted mb-0">{% if config.get('DB_BACKEND') == 'postgres' %}Everything, including uploaded photos and files, is kept in PostgreSQL, so restarts and redeploys lose nothing.{% else %}Back up by copying the <code>instance</code> folder while the app is stopped.{% endif %}</p>

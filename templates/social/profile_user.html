@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/macros.html" import icon, avatar, vtick, empty with context %}
+{% from "partials/macros.html" import icon, avatar, vtick, empty, grid_tile with context %}
 {% block title %}{{ u.name }}{% endblock %}
 {% block content %}
 <div class="page page-enter" style="max-width:900px">
@@ -20,6 +20,7 @@
         {% if is_me %}
           <a class="btn ghost" href="{{ url_for('social.settings') }}">Edit profile</a>
           <a class="btn ghost" href="{{ url_for('events.tickets') }}">{{ icon("ticket", "ico sm") }}My tickets</a>
+          {% if u.role == 'student' %}<a class="btn brand" href="{{ url_for('social.post_new') }}">{{ icon("plus", "ico sm") }}New post</a>{% endif %}
         {% elif g.user and g.user.role == 'student' and u.role == 'student' %}
           <span data-friend-box>
             {% if status == 'friends' %}<button class="btn ghost" data-friend="{{ u.id }}:remove" type="button">Friends ✓</button>
@@ -38,6 +39,7 @@
 
   <nav class="tabs">
     <a class="{{ 'on' if tab == 'events' }}" href="?tab=events">{{ icon("ticket", "ico sm") }}Events</a>
+    <a class="{{ 'on' if tab == 'posts' }}" href="?tab=posts">{{ icon("image", "ico sm") }}Posts <span class="n">{{ posts|length }}</span></a>
     <a class="{{ 'on' if tab == 'certs' }}" href="?tab=certs">{{ icon("award", "ico sm") }}Certifications <span class="n">{{ cert_count }}</span></a>
     <a class="{{ 'on' if tab == 'badges' }}" href="?tab=badges">{{ icon("sparkles", "ico sm") }}Badges <span class="n">{{ badges|length }}</span></a>
     <a class="{{ 'on' if tab == 'friends' }}" href="?tab=friends">{{ icon("users", "ico sm") }}Friends <span class="n">{{ friend_count }}</span></a>
@@ -57,12 +59,15 @@
         {% endfor %}
       </div>
     {% else %}{{ empty("🎟️", "No events yet", (("You haven't" if is_me else u.name.split()[0] ~ " hasn't") ~ " registered for anything yet."), url_for('social.explore') if is_me else None, "Find events") }}{% endif %}
+  {% elif tab == 'posts' %}
+    {% if posts %}<div class="pgrid">{% for p in posts %}{{ grid_tile(p) }}{% endfor %}</div>
+    {% else %}{{ empty("📸", "No posts yet", ("Share photos from events you went to, team pictures or your project." if is_me else u.name.split()[0] ~ " hasn't posted yet."), url_for('social.post_new') if is_me else None, "Create a post") }}{% endif %}
   {% elif tab == 'certs' %}
     {% if not events_visible %}
       <div class="lock-note">{{ icon("lock", "ico lg") }}<h3 style="margin-top:10px">Certifications are private</h3><p>{{ u.name.split()[0] }} shares them with {{ "friends only" if u.show_events == 'friends' else "nobody" }}.</p></div>
     {% elif certs %}
       {% include "partials/cert_grid.html" %}
-    {% else %}{{ empty("📜", "No certificates yet", ("Check in at an event and your certificate lands here automatically." if is_me else u.name.split()[0] ~ " hasn't earned a certificate yet.")) }}{% endif %}
+    {% else %}{{ empty("📜", "No certificates yet", ("Complete an event (your completion QR gets scanned) and your certificate lands here automatically." if is_me else u.name.split()[0] ~ " hasn't earned a certificate yet.")) }}{% endif %}
   {% elif tab == 'badges' %}
     {% if badges %}
       <div class="badges">{% for e, t, d in badges %}<div class="badge-card reveal"><span class="e">{{ e }}</span><b>{{ t }}</b><small>{{ d }}</small></div>{% endfor %}</div>

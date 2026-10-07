@@ -4,7 +4,7 @@
 {% block event_id %}{{ reg.event_id }}{% endblock %}
 {% block content %}
 {% set color = reg.category|cat_color %}
-<div class="page narrow page-enter" style="--c: {{ color }}">
+<div class="page narrow page-enter" style="--c: {{ color }}"{% if steps and current %} data-journey-poll="{{ url_for('events.journey_state', code=reg.pass_code) }}" data-journey-sig="{{ journey_sig }}"{% endif %}>
   <div class="row between" style="margin-bottom:6px"><a class="link small" href="{{ url_for('events.tickets') }}">All tickets</a>{{ reg_pill(reg.status, pay.status if pay else None) }}</div>
 
   {% if reg.status == 'payment_review' %}
@@ -36,10 +36,18 @@
           {% if reg.slot_start and reg.status == 'confirmed' %}
           <div class="slotline" style="margin:10px 0;display:flex">{{ icon("clock", "ico sm") }}<span>Your slot <b>{{ reg.slot_start|time }}–{{ reg.slot_end|time }}</b>, {{ reg.slot_start|dt("%a %d %b") }} · <b>{{ reg.slot_venue }}</b></span></div>
           {% endif %}
-          <div class="pass-qr {{ 'dim' if reg.status != 'confirmed' }}">{{ reg.pass_code|qr }}
-            {% if reg.status != 'confirmed' %}<span class="lockmsg">QR activates once your ticket is confirmed</span>{% endif %}</div>
+          {% if current %}
+          <div class="step-label"><span class="step-n">Step {{ current.n }} of {{ steps|length }}</span><b>{{ current.icon }} {{ current.title }}</b></div>
+          <div class="pass-qr step-qr">{{ current.qr|qr }}</div>
+          <div class="pass-code">{{ current.reg.pass_code }}</div>
+          <p class="flip-hint">{{ current.hint }}</p>
+          {% elif steps %}
+          <div class="pass-qr all-done"><span>🎉</span><b>All steps done</b><small>Thanks for coming! Your certificate{{ 's are' if steps|selectattr('kind', 'equalto', 'DONE')|list|length > 1 else ' is' }} ready below.</small></div>
           <div class="pass-code">{{ reg.pass_code }}</div>
-          <p class="flip-hint">{% if reg.attended %}✅ Checked in {{ reg.checkin_time|dt("%d %b, %I:%M %p") }}{% else %}Show this at the entry desk · tap to flip{% endif %}</p>
+          {% else %}
+          <div class="pass-qr dim">{{ reg.pass_code|qr }}<span class="lockmsg">QR activates once your ticket is confirmed</span></div>
+          <div class="pass-code">{{ reg.pass_code }}</div>
+          {% endif %}
         </div>
         <span class="pass-shine"></span>
       </div>
@@ -64,9 +72,27 @@
   <div class="ticket-actions">
     <a class="btn ghost" href="{{ url_for('events.ics', eid=reg.event_id) }}">{{ icon("calendar", "ico sm") }}Add to calendar</a>
     {% if reg.map_url %}<a class="btn ghost" href="{{ reg.map_url }}" target="_blank" rel="noopener">{{ icon("pin", "ico sm") }}Directions</a>{% endif %}
-    {% if reg.attended or win %}<a class="btn brand" href="{{ url_for('events.certificate', code=reg.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>{% endif %}
+    {% if reg.completed_at or win %}<a class="btn brand" href="{{ url_for('events.certificate', code=reg.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>{% endif %}
     {% if pay and pay.status in ('paid', 'refunded') and pay.amount %}<a class="btn ghost" href="{{ url_for('events.receipt', receipt=pay.receipt_no) }}">{{ icon("download", "ico sm") }}Receipt</a>{% endif %}
   </div>
+
+  {% if steps %}
+  <section class="card journey" aria-label="Your event day">
+    <div class="card-head"><h3>Your event day</h3><span class="pill {{ 'green' if not current else 'amber' }}">{{ steps|selectattr('done')|list|length }} / {{ steps|length }} done</span></div>
+    <p class="small muted" style="margin-top:-4px">Go step by step. Each step has its own QR, and the next one appears here as soon as the volunteer scans the current one.</p>
+    <ol class="jsteps">
+      {% for s in steps %}
+      <li class="jstep {{ s.state }}">
+        <span class="dot">{% if s.done %}✓{% else %}{{ s.n }}{% endif %}</span>
+        <div class="grow"><b>{{ s.icon }} {{ s.title }}</b>
+          <small>{% if s.done %}Done {{ s.done_at|dt("%d %b, %I:%M %p") }}{% elif s.state == 'current' %}Now: {{ s.hint }}{% else %}Unlocks after step {{ s.n - 1 }}{% endif %}</small></div>
+        {% if s.cert and s.done %}<a class="btn soft sm" href="{{ url_for('events.certificate', code=s.reg.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>
+        {% elif s.state == 'current' %}<span class="pill amber">Show QR ↑</span>{% elif s.state == 'locked' %}<span class="lock" aria-label="Locked">🔒</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+  {% endif %}
 
   {% if news %}
   <section class="card" style="margin-top:22px">

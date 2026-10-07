@@ -15,7 +15,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 import core
 import db
-from db import q, ex
+from db import q, ex, scalar
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MEDIA_CHUNK = 2 * 1024 * 1024      # bytes per piece when streaming uploads out of PostgreSQL
@@ -60,6 +60,14 @@ def create_app():
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     db.init_app(app)
     core.register_filters(app)
+    # On Render the disk is wiped on every restart, sleep and deploy. Without DATABASE_URL the SQLite file would be
+    # wiped with it and new accounts would silently disappear, so say so loudly (logs, developer console, banner).
+    app.config["DATA_AT_RISK"] = bool(os.environ.get("RENDER")) and not db.is_postgres()
+    if app.config["DATA_AT_RISK"]:
+        print("\n  !!! WARNING: DATABASE_URL is not set on Render. EventFlow is using a temporary SQLite file that Render\n"
+              "  !!! deletes on every restart, so new accounts, events and uploads WILL BE LOST.\n"
+              "  !!! Fix: Render dashboard -> eventflow -> Environment -> add DATABASE_URL = your database's Internal URL.\n",
+              flush=True)
 
     with app.app_context(), db.setup_lock():
         db.create_schema()
@@ -199,7 +207,10 @@ def create_app():
 
     @app.route("/healthz")
     def healthz():
-        return {"ok": True, "time": datetime.now().isoformat(timespec="seconds")}
+        """Render's health check. Also says where data is kept, which is the quickest way to spot a missing database."""
+        users = scalar("SELECT COUNT(*) FROM users")
+        return {"ok": True, "time": datetime.now().isoformat(timespec="seconds"), "database": db.describe(),
+                "persistent": not app.config["DATA_AT_RISK"], "users": users}
 
     # ------------------------------------------------------------ errors
     def err(code, title, message):

@@ -2,7 +2,7 @@
 import json
 from datetime import datetime, timedelta
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, g, abort, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, g, abort, session, Response
 from werkzeug.security import generate_password_hash, check_password_hash
 
 import core
@@ -105,11 +105,11 @@ def home():
     page = max(1, request.args.get("page", 1, type=int))
     me = g.user
     following = [r[0] for r in q("SELECT college_id FROM follows WHERE follower_id=?", (me["id"],))]
-    if me["role"] == "college":
-        following.append(me["id"])
+    authors = following + [me["id"]] + (core.friend_ids(me["id"]) if me["role"] == "student" else [])
     clause, args = in_clause(following)
-    rows = q(f"""{POST_SELECT} AND p.author_id IN {clause} ORDER BY p.created_at DESC LIMIT ? OFFSET ?""",
-             args + [PAGE + 1, (page - 1) * PAGE])
+    a_clause, a_args = in_clause(authors)
+    rows = q(f"""{POST_SELECT} AND p.author_id IN {a_clause} ORDER BY p.created_at DESC LIMIT ? OFFSET ?""",
+             a_args + [PAGE + 1, (page - 1) * PAGE])
     suggested = False
     if not rows and page == 1:
         rows = q(f"{POST_SELECT} ORDER BY p.created_at DESC LIMIT ?", (PAGE,))
@@ -126,7 +126,10 @@ def home():
         for e in q(f"""SELECT e.*, u.name college, u.username, u.avatar college_avatar FROM events e JOIN users u ON u.id=e.college_id
                        WHERE e.college_id IN {clause} AND e.status IN ('open','closed') AND e.is_removed=0 AND e.parent_id IS NULL
                        AND e.start_dt BETWEEN ? AND ? ORDER BY e.start_dt""", args + [core.now_iso(), horizon]):
+            days = (core.parse_dt(e["start_dt"]).date() - datetime.now().date()).days
             stories.append({"college": e["college"], "username": e["username"], "avatar_path": e["college_avatar"],
+                            "profile": url_for("social.profile", username=e["username"]),
+                            "ago": "today" if days <= 0 else "tomorrow" if days == 1 else f"in {days} days",
                             "avatar": url_for("media", rel=e["college_avatar"]) if e["college_avatar"] else None,
                             "title": e["title"], "tagline": e["tagline"] or "", "category": e["category"],
                             "when": core.parse_dt(e["start_dt"]).strftime("%a %d %b, %I:%M %p").replace(" 0", " "),
@@ -261,6 +264,7 @@ def profile(username):
 
     status = core.friend_status(me, user["id"])
     fids = core.friend_ids(user["id"])
+    ctx["posts"] = hydrate_posts(q(f"{POST_SELECT} AND p.author_id=? ORDER BY p.created_at DESC LIMIT 60", (user["id"],)), me)
     ctx.update(status=status, friend_count=len(fids), badges=core.user_badges(user["id"]), tab=tab or "events",
                can_message=core.can_message(me, user))
     ctx["events_visible"] = core.can_see_events_of(me, user)
@@ -281,6 +285,25 @@ def profile(username):
         mine = set(core.friend_ids(me["id"]))
         ctx["mutual"] = [f for f in ctx["friends"] if f["id"] in mine]
     return render_template("social/profile_user.html", **ctx)
+
+
+@bp.route("/settings/certificates/preview.jpg")
+@core.login_required
+def certificate_preview():
+    """A sample certificate with this college's logo, signature and signatory, for the settings page."""
+    me = g.user
+    if me["role"] != "college":
+        abort(404)
+    import documents
+    data = {"name": "Ananya Sharma", "kind": "participation", "college": me["name"], "college_name": "Your Student's College",
+            "department": "Computer Science", "event": "Sample Event", "category": "Technical", "fest": "", "date": "12 October 2026",
+            "venue": "Main Auditorium", "team": "", "award": "", "position": 0, "code": "EVF-SAMPLE", "issued": "12 Oct 2026",
+            "verify_url": url_for("social.home", _external=True), "logo": core.media_bytes(me["cert_logo"] or me["avatar"]),
+            "signature": core.media_bytes(me["cert_signature"]), "signatory": me["cert_signatory"] or "",
+            "signatory_title": me["cert_signatory_title"] or ""}
+    resp = Response(documents.png_preview(documents.certificate_png(data), 1200), mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @bp.route("/rewards")
@@ -339,20 +362,28 @@ def friends():
 
 # ================================================================== posts
 def _author_can_post():
-    return g.user and g.user["role"] == "college"
+    return g.user and g.user["role"] in ("college", "student")
+
+
+def _postable_events(me):
+    """Events a post can be linked to: a college's own events; a student's events they're registered for."""
+    if me["role"] == "college":
+        return q("SELECT id, title FROM events WHERE college_id=? AND is_removed=0 ORDER BY start_dt DESC", (me["id"],))
+    return q("""SELECT e.id, e.title FROM registrations r JOIN events e ON e.id=r.event_id
+                WHERE r.user_id=? AND r.status='confirmed' AND e.is_removed=0 ORDER BY e.start_dt DESC""", (me["id"],))
 
 
 @bp.route("/posts/new", methods=["GET", "POST"])
 @core.login_required
 def post_new():
     if not _author_can_post():
-        flash("Only college accounts can publish posts.", "info")
+        flash("Only college and student accounts can publish posts.", "info")
         return redirect(url_for("social.home"))
-    my_events = q("SELECT id, title FROM events WHERE college_id=? AND is_removed=0 ORDER BY start_dt DESC", (g.user["id"],))
+    my_events = _postable_events(g.user)
     if request.method == "POST":
         caption = (request.form.get("caption") or "").strip()[:2200]
         event_id = request.form.get("event_id", type=int)
-        if event_id and not scalar("SELECT 1 FROM events WHERE id=? AND college_id=?", (event_id, g.user["id"])):
+        if event_id and event_id not in {e["id"] for e in my_events}:
             event_id = None
         files = [f for f in request.files.getlist("media") if f and f.filename]
         if not caption and not files:
@@ -374,9 +405,12 @@ def post_new():
         for i, s in enumerate(saved):
             ex("INSERT INTO post_media (post_id, path, kind, original_name, size, position) VALUES (?,?,?,?,?,?)",
                (pid, s["path"], s["kind"], s["original"], s["size"], i))
-        followers_ = [r[0] for r in q("SELECT follower_id FROM follows WHERE college_id=?", (g.user["id"],))]
-        core.notify_many(followers_, "post", f"{g.user['name']} shared a new post.", url_for("social.post_view", pid=pid), g.user["id"])
-        flash("Posted! Your followers will see it in their feed.", "success")
+        if g.user["role"] == "college":
+            audience = [r[0] for r in q("SELECT follower_id FROM follows WHERE college_id=?", (g.user["id"],))]
+        else:
+            audience = core.friend_ids(g.user["id"])
+        core.notify_many(audience, "post", f"{g.user['name']} shared a new post.", url_for("social.post_view", pid=pid), g.user["id"])
+        flash("Posted! Your " + ("followers" if g.user["role"] == "college" else "friends") + " will see it in their feed.", "success")
         return redirect(url_for("social.post_view", pid=pid))
     return render_template("social/post_new.html", my_events=my_events, form={"event_id": request.args.get("event", "")})
 
@@ -541,14 +575,15 @@ def message_send(username):
 
 
 # ================================================================== settings
-SETTINGS_TABS = ["profile", "account", "privacy", "notifications", "appearance", "payments", "danger"]
+SETTINGS_TABS = ["profile", "account", "privacy", "notifications", "appearance", "payments", "certificates", "danger"]
+COLLEGE_TABS = ("payments", "certificates")
 
 
 @bp.route("/settings", methods=["GET", "POST"])
 @bp.route("/settings/<tab>", methods=["GET", "POST"])
 @core.login_required
 def settings(tab="profile"):
-    if tab not in SETTINGS_TABS or (tab == "payments" and g.user["role"] != "college"):
+    if tab not in SETTINGS_TABS or (tab in COLLEGE_TABS and g.user["role"] != "college"):
         abort(404)
     me = g.user
     if request.method == "POST":
@@ -631,6 +666,24 @@ def settings(tab="profile"):
                     flash("Verification requested. You'll be notified when it's reviewed.", "success")
                 else:
                     flash("Payment settings saved.", "success")
+        elif tab == "certificates":
+            fields = {"cert_signatory": (f.get("cert_signatory") or "").strip()[:60] or None,
+                      "cert_signatory_title": (f.get("cert_signatory_title") or "").strip()[:80] or None}
+            for key in ("cert_logo", "cert_signature"):
+                file = request.files.get(key)
+                if file and file.filename:
+                    try:
+                        up = core.save_upload(file, allowed=("image",), max_mb=5)
+                    except ValueError as e:
+                        flash(str(e), "error")
+                        return redirect(url_for("social.settings", tab=tab))
+                    core.delete_upload(me[key])
+                    fields[key] = up["path"]
+                elif f.get(f"remove_{key}"):
+                    core.delete_upload(me[key])
+                    fields[key] = None
+            ex(f"UPDATE users SET {', '.join(k + '=?' for k in fields)} WHERE id=?", tuple(fields.values()) + (me["id"],))
+            flash("Certificate design saved. Every certificate for your events now uses it.", "success")
         elif tab == "danger":
             if me["role"] == "dev":
                 flash("The developer account can't be deleted.", "error")

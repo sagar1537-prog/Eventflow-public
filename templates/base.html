@@ -43,7 +43,7 @@
     {% if g.user.role == 'dev' %}
     <a class="nav-item {{ 'active' if ep.startswith('dev.') }}" href="{{ url_for('dev.overview') }}">{{ icon("shield") }}<span class="label">Developer</span></a>
     {% endif %}
-    {% if g.user.role == 'college' %}
+    {% if g.user.role in ('college', 'student') %}
     <a class="nav-item nav-create" href="{{ url_for('social.post_new') }}">{{ icon("plus-square") }}<span class="label">Create post</span></a>
     {% endif %}
     <div class="nav-foot">
@@ -85,7 +85,7 @@
         {% endif %}
         <a href="{{ url_for('social.saved') }}">{{ icon("bookmark") }}<span>Saved</span></a>
         {% if is_studio %}<a href="{{ url_for('studio.overview') }}">{{ icon("studio") }}<span>Studio</span></a>{% endif %}
-        {% if g.user.role == 'college' %}<a href="{{ url_for('social.post_new') }}">{{ icon("plus-square") }}<span>New post</span></a>{% endif %}
+        {% if g.user.role in ('college', 'student') %}<a href="{{ url_for('social.post_new') }}">{{ icon("plus-square") }}<span>New post</span></a>{% endif %}
         {% if g.user.role == 'dev' %}<a href="{{ url_for('dev.overview') }}">{{ icon("shield") }}<span>Developer</span></a>{% endif %}
         <a href="{{ url_for('social.settings') }}">{{ icon("settings") }}<span>Settings</span></a>
         <button type="button" data-theme-toggle>{{ icon("moon") }}<span>Dark mode</span></button>
@@ -96,6 +96,7 @@
   </div>
 
   <main class="main" id="main">
+    {% if config.get('DATA_AT_RISK') and g.user and g.user.role in ('dev', 'college') %}<div class="notice-banner danger-banner" style="margin:-26px -32px 22px">⚠️ Data is not being saved permanently: this Render service has no <b>DATABASE_URL</b>, so accounts and events are wiped on every restart. Add it under Render → Environment (the database's Internal URL), or deploy with the Blueprint.</div>{% endif %}
     {% if setting('banner_text') %}<div class="notice-banner" style="margin:-26px -32px 22px">{{ setting('banner_text') }}</div>{% endif %}
     {% block content %}{% endblock %}
   </main>
@@ -110,6 +111,7 @@
       <a class="{{ 'on' if ep.startswith('dev.') }}" href="{{ url_for('dev.overview') }}" aria-label="Developer">{{ icon("shield", "ico lg") }}</a>
       <a class="{{ 'on' if ep == 'social.settings' }}" href="{{ url_for('social.settings') }}" aria-label="Settings">{{ icon("settings", "ico lg") }}</a>
     {% else %}
+      <a href="{{ url_for('social.post_new') }}" aria-label="Create post"><span class="create">{{ icon("plus") }}</span></a>
       <a class="{{ 'on' if ep.startswith('events.ticket') or ep == 'events.tickets' }}" href="{{ url_for('events.tickets') }}" aria-label="My tickets">{{ icon("ticket", "ico lg") }}</a>
       <a class="{{ 'on' if ep == 'social.friends' }}" href="{{ url_for('social.friends') }}" aria-label="Friends">{{ icon("users", "ico lg") }}</a>
     {% endif %}

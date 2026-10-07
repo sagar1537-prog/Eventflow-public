@@ -506,8 +506,8 @@
       viewer.innerHTML = `<div class="story-card">
         <div class="bg" style="background-image:${s.banner ? `url('${s.banner}')` : `linear-gradient(135deg, ${s.color}, #0F1424)`}"></div><div class="shade"></div>
         <div class="story-bars">${stories.map((_, k) => `<i><b style="width:${k < idx ? 100 : 0}%"></b></i>`).join("")}</div>
-        <div class="story-top"><span class="av av-sm" style="--h:${(s.username.length * 47) % 360}">${s.avatar ? `<img src="${s.avatar}" alt="">` : esc(s.college[0])}</span>
-          <b>${esc(s.college)}</b><button aria-label="Close" data-x>✕</button></div>
+        <div class="story-top"><a class="story-author" href="${s.profile}" aria-label="Open ${esc(s.college)}'s page"><span class="av av-sm" style="--h:${(s.username.length * 47) % 360}">${s.avatar ? `<img src="${s.avatar}" alt="">` : esc(s.college[0])}</span>
+          <span><b>${esc(s.college)}</b><small>@${esc(s.username)} · ${esc(s.ago || "")}</small></span></a><button aria-label="Close" data-x>✕</button></div>
         <button class="story-nav prev" aria-label="Previous"></button><button class="story-nav next" aria-label="Next"></button>
         <div class="story-body"><span class="pill dark">${esc(s.category)} · ${s.fee ? (s.fest ? "from ₹" : "₹") + s.fee : "Free"}</span>
           <h2>${esc(s.title)}</h2><p>${esc(s.tagline)}</p><p class="small">📅 ${esc(s.when)}<br>📍 ${esc(s.venue)}</p>
@@ -528,6 +528,28 @@
     viewer.className = "story-viewer";
     viewer.addEventListener("click", (e) => { if (e.target === viewer) closeStory(); });
     $$(".story").forEach((b, k) => b.addEventListener("click", () => { idx = k; document.body.appendChild(viewer); document.body.style.overflow = "hidden"; start(); }));
+  }
+
+  // ------------------------------------------------------------ ticket: next step appears by itself after a scan
+  const journeyEl = $("[data-journey-poll]");
+  if (journeyEl) {
+    let sig = journeyEl.dataset.journeySig, busy = false;
+    const poll = async () => {
+      if (document.hidden || busy) return;
+      busy = true;
+      try {
+        const r = await api(journeyEl.dataset.journeyPoll, undefined, "GET");
+        if (r.sig && r.sig !== sig) {
+          sig = r.sig;
+          toast("✅ Step done! Loading your next step…", "success", 1800);
+          if (navigator.vibrate) navigator.vibrate(80);
+          setTimeout(() => location.reload(), 900);
+        }
+      } catch (e) { /* offline: try again next time */ }
+      busy = false;
+    };
+    setInterval(poll, 4000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   }
 
   // ------------------------------------------------------------ live counts (notifications, messages, requests)
@@ -652,6 +674,10 @@
     dz.addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfer.files.length) { input.files = e.dataTransfer.files; show(); } });
     input.addEventListener("change", show);
   });
+  $$("[data-autosubmit-name]").forEach((input) => input.addEventListener("change", () => {
+    const f = input.files && input.files[0], label = input.closest("label");
+    if (f && label) label.dataset.file = "✓ " + f.name.slice(0, 28) + " · save to apply";
+  }));
   $$("[data-preview]").forEach((input) => input.addEventListener("change", () => {
     const img = document.querySelector(input.dataset.preview);
     if (img && input.files[0]) { img.src = URL.createObjectURL(input.files[0]); img.hidden = false; }

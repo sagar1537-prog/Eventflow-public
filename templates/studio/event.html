@@ -13,6 +13,7 @@
     </div>
     <div class="row">
       <a class="btn brand" href="{{ url_for('studio.checkin', eid=e.id) }}">{{ icon("scan", "ico sm") }}Check-in scanner</a>
+      {% if stats.attended > stats.completed %}<form method="post" action="{{ url_for('studio.complete_all', eid=e.id) }}" data-confirm="Mark all {{ stats.attended - stats.completed }} checked-in participants as completed? This unlocks their certificates.">{{ csrf_field() }}<button class="btn ghost">{{ icon("award", "ico sm") }}Complete for all checked in</button></form>{% endif %}
       <a class="btn ghost" href="{{ url_for('events.detail', eid=e.id) }}">{{ icon("eye", "ico sm") }}View page</a>
       {% if lead %}<a class="btn ghost" href="{{ url_for('studio.event_edit', eid=e.id) }}">{{ icon("edit", "ico sm") }}Edit</a>
       <a class="btn ghost icon" href="{{ url_for('studio.export', eid=e.id) }}" title="Export CSV" aria-label="Export CSV">{{ icon("download", "ico sm") }}</a>{% endif %}
@@ -23,7 +24,7 @@
 
   <div class="kpis">
     <div class="kpi"><span>Confirmed</span><b><span data-count="{{ stats.registered }}">{{ stats.registered }}</span><small style="font-size:1rem"> / {{ e.capacity }}</small></b><small>{{ (stats.registered / e.capacity * 100)|round|int }}% of seats</small></div>
-    <div class="kpi"><span>Checked in</span><b data-count="{{ stats.attended }}">{{ stats.attended }}</b><small>{{ stats.attendance_rate|pct }} of confirmed</small></div>
+    <div class="kpi"><span>Checked in</span><b data-count="{{ stats.attended }}">{{ stats.attended }}</b><small>{{ stats.attendance_rate|pct }} of confirmed · {{ stats.completed }} completed{% if stats.fed %} · {{ stats.fed }} fed{% endif %}</small></div>
     <div class="kpi {{ 'hl' if stats.review }}"><span>Payments to verify</span><b>{{ stats.review }}</b><small>{{ stats.cancelled }} cancelled</small></div>
     <div class="kpi dark"><span>Collected</span><b data-count="{{ stats.revenue }}" data-prefix="₹">{{ stats.revenue|inr }}</b><small>{{ (stats.revenue - stats.fees)|inr }} net</small></div>
     <div class="kpi"><span>Food estimate</span><b>{{ food.total|inr }}</b><small>{{ food.plates }} plates</small></div>

@@ -7,6 +7,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 
 import ai_agent
 import core
+import journey
 import fest as festlib
 from db import q, ex, scalar, in_clause
 from blueprints.events import confirm, promote_waitlist
@@ -830,44 +831,43 @@ def checkin(eid):
     recent = q("""SELECT r.*, u.name, u.department, u.avatar, ev.title ev_title FROM registrations r JOIN users u ON u.id=r.user_id
                   JOIN events ev ON ev.id=r.event_id WHERE (ev.id=? OR ev.parent_id=?) AND r.attended=1
                   ORDER BY r.checkin_time DESC LIMIT 12""", (eid, eid))
-    return render_template("studio/checkin.html", e=e, stats=core.event_stats(eid), recent=recent, active=f"ev{eid}")
+    return render_template("studio/checkin.html", e=e, stats=core.event_stats(eid), recent=recent, active=f"ev{eid}",
+                           stations=journey.STATIONS, station=request.args.get("station", ""))
 
 
 @bp.route("/api/checkin", methods=["POST"])
 def api_checkin():
+    """One scan at a desk. The QR says which step it is (entry, completion, food); the order is enforced."""
     data = request.get_json(silent=True) or {}
-    code = (data.get("code") or "").strip().upper()
-    if code.startswith("HTTP"):
-        code = code.rstrip("/").rsplit("/", 1)[-1]
-    eid = data.get("event_id")
-    r = q("""SELECT r.*, u.name, u.department, u.year, u.college_name, e.title, e.parent_id FROM registrations r JOIN users u ON u.id=r.user_id
-             JOIN events e ON e.id=r.event_id WHERE r.pass_code=?""", (code,), one=True)
-    if not r:
-        return jsonify(ok=False, level="error", message=f"No ticket found for “{code}”.")
-    if not staff_role(r["event_id"]):
-        return jsonify(ok=False, level="error", message="This ticket is for an event you don't manage.")
     try:
-        eid = int(eid) if eid else None
+        eid = int(data.get("event_id") or 0) or None
     except (TypeError, ValueError):
         eid = None
-    if eid and eid not in (r["event_id"], r["parent_id"]):
-        return jsonify(ok=False, level="error", message=f"Wrong event. This ticket is for {r['title']}.")
-    if r["status"] != "confirmed":
-        label = {"payment_review": "payment is still being verified", "pending_payment": "hasn't paid yet",
-                 "cancelled": "was cancelled", "waitlisted": "is still on the waitlist"}.get(r["status"], r["status"])
-        return jsonify(ok=False, level="error", message=f"{r['name']}'s ticket {label}.")
-    person = {"name": r["name"], "department": r["department"], "year": r["year"], "college": r["college_name"],
-              "team": r["team_name"], "food": r["food_pref"],
-              "slot": f"{core.parse_dt(r['slot_start']).strftime('%I:%M %p').lstrip('0')}, {r['slot_venue']}" if r["slot_start"] else None}
-    if r["attended"]:
-        level, msg = "warn", f"{r['name']} is already checked in."
-    else:
-        ex("UPDATE registrations SET attended=1, checkin_time=? WHERE id=?", (core.now_iso(), r["id"]))
-        core.notify(r["user_id"], "event", f"Checked in at {r['title']}. +{core.POINTS_ATTEND} points and your certificate is unlocked!",
-                    url_for("events.certificate", code=r["pass_code"]))
-        level, msg = "success", f"Welcome, {r['name']}!" + (f" ({r['title']})" if r["parent_id"] else "")
-    s = core.event_stats(eid or r["event_id"])
-    return jsonify(ok=level == "success", level=level, message=msg, person=person, attended=s["attended"], registered=s["registered"])
+    res = journey.scan(data.get("code"), station=(data.get("station") or "").upper(), desk_event=eid,
+                       can_staff=staff_role, actor_id=g.user["id"])
+    if eid and staff_role(eid):
+        s = core.event_stats(eid)
+        res.update(attended=s["attended"], registered=s["registered"], completed=s["completed"], fed=s["fed"])
+    return jsonify(res)
+
+
+@bp.route("/events/<int:eid>/complete-all", methods=["POST"])
+def complete_all(eid):
+    """End of the event: mark everyone who checked in as completed (unlocks their certificates)."""
+    need(eid)
+    e = q("SELECT * FROM events WHERE id=?", (eid,), one=True) or abort(404)
+    rows = q("""SELECT r.id, r.user_id, r.pass_code, ev.title FROM registrations r JOIN events ev ON ev.id=r.event_id
+                WHERE (ev.id=? OR ev.parent_id=?) AND r.status='confirmed' AND r.attended=1 AND r.completed_at IS NULL""",
+             (eid, eid))
+    now = core.now_iso()
+    for r in rows:
+        ex("UPDATE registrations SET completed_at=? WHERE id=?", (now, r["id"]))
+        core.notify(r["user_id"], "event", f"You completed {r['title']}. Your certificate is ready. +{core.POINTS_COMPLETE} points.",
+                    url_for("events.certificate", code=r["pass_code"]), g.user["id"])
+    core.audit("event.complete_all", f"{e['title']}: {len(rows)}")
+    flash(f"Marked {len(rows)} checked-in participant{'s' if len(rows) != 1 else ''} as completed. Their certificates are unlocked."
+          if rows else "Everyone who checked in is already marked complete.", "success" if rows else "info")
+    return redirect(request.referrer or url_for("studio.event", eid=eid))
 
 
 @bp.route("/api/draft", methods=["POST"])

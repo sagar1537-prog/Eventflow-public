@@ -952,7 +952,7 @@ table.data tr.muted-row td { color: var(--ink-3); }
 
 /* ------------------------------------------------------------------ startup intro */
 @property --ei-r { syntax: "<percentage>"; inherits: false; initial-value: -1%; }
-#ef-intro { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; overflow: hidden; color: #fff;
+#ef-intro { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 1000; display: grid; grid-template: 1fr / 1fr; place-items: center; overflow: hidden; color: #fff;
   background: radial-gradient(120% 90% at 50% 40%, #1B2342 0%, #0B1020 60%, #070A14 100%); perspective: 1000px;
   --ei-r: 0%; }
 html.intro-on, html.intro-on body { overflow: hidden; }
@@ -960,6 +960,9 @@ html.intro-on, html.intro-on body { overflow: hidden; }
   -webkit-mask: radial-gradient(circle at 50% 46%, transparent var(--ei-r), #000 calc(var(--ei-r) + .5%));
   mask: radial-gradient(circle at 50% 46%, transparent var(--ei-r), #000 calc(var(--ei-r) + .5%)); }
 @keyframes ei-iris { 0% { --ei-r: -1%; } 100% { --ei-r: 160%; opacity: .6; } }
+/* every layer sits in the same grid cell, so only the stage decides what's centred (it used to be pushed down) */
+#ef-intro > .ei-bg { position: absolute; inset: 0; pointer-events: none; }
+#ef-intro > .ei-stage { grid-area: 1 / 1; align-self: center; }
 .ei-bg i { position: absolute; width: 60vmax; height: 60vmax; border-radius: 50%; filter: blur(90px); opacity: .45; animation: ei-drift 6s ease-in-out infinite alternate; }
 .ei-bg i:nth-child(1) { background: #F5A524; left: -18vmax; top: -22vmax; }
 .ei-bg i:nth-child(2) { background: #7C5CFF; right: -20vmax; bottom: -26vmax; animation-delay: -2s; }
@@ -1437,6 +1440,72 @@ html.intro-reveal .shell, html.intro-reveal .auth-wrap, html.intro-reveal body >
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   .reveal { opacity: 1; transform: none; }
 }
+
+/* ===================================================================== step-by-step event day */
+.step-label { display: grid; justify-items: center; gap: 2px; margin: 6px 0 8px; text-align: center; }
+.step-label .step-n { font: 700 .7rem var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--c, var(--brand-ink));
+  background: color-mix(in srgb, var(--c, var(--brand)) 14%, transparent); padding: 3px 10px; border-radius: 99px; }
+.step-label b { font-family: var(--display); font-size: 1.08rem; }
+.pass-qr.step-qr { animation: qr-in .5s var(--spring); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--brand)) 55%, transparent); }
+@keyframes qr-in { from { transform: scale(.88); opacity: 0; } }
+.pass-qr.all-done { width: auto; min-height: 200px; padding: 22px; gap: 6px; text-align: center; background: var(--green-soft); color: var(--ink); }
+.pass-qr.all-done span { font-size: 2.6rem; } .pass-qr.all-done small { color: var(--ink-2); max-width: 220px; }
+.journey { margin-top: 22px; }
+.jsteps { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 0; position: relative; }
+.jstep { display: flex; align-items: center; gap: 14px; padding: 12px 4px; position: relative; }
+.jstep + .jstep::before { content: ""; position: absolute; left: 21px; top: -12px; height: 24px; width: 2px; background: var(--line); }
+.jstep.done + .jstep::before { background: var(--green); }
+.jstep .dot { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 800;
+  background: var(--surface-3); color: var(--ink-2); border: 2px solid var(--line); position: relative; z-index: 1; }
+.jstep.done .dot { background: var(--green); border-color: var(--green); color: #fff; }
+.jstep.current .dot { background: var(--brand); border-color: var(--brand); color: var(--brand-ink, #111); box-shadow: 0 0 0 6px color-mix(in srgb, var(--brand) 25%, transparent);
+  animation: dot-pulse 1.8s ease-in-out infinite; }
+@keyframes dot-pulse { 50% { box-shadow: 0 0 0 11px color-mix(in srgb, var(--brand) 6%, transparent); } }
+.jstep.locked { opacity: .55; }
+.jstep b { display: block; } .jstep small { display: block; color: var(--ink-2); margin-top: 2px; line-height: 1.35; }
+.jstep .lock { font-size: 1.05rem; }
+.station-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.station-card small { display: block; max-width: 420px; }
+.step-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+.step-counts div { background: var(--surface-2, var(--surface)); border: 1px solid var(--line); border-radius: 12px; padding: 10px; text-align: center; }
+.step-counts span { display: block; font-size: 1.2rem; } .step-counts b { display: block; font: 800 1.4rem var(--display); }
+.step-counts small { color: var(--ink-2); }
+.scan-steps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.scan-steps span { font-size: .78rem; font-weight: 600; padding: 4px 10px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); }
+.scan-steps .done { background: var(--green-soft); border-color: transparent; color: var(--green); }
+.scan-steps .current { background: var(--amber-soft); border-color: transparent; }
+.scan-steps .locked { opacity: .6; }
+
+/* ===================================================================== certificates */
+.cert-frame { margin: 8px 0 0; border-radius: 14px; overflow: hidden; background: #FBF8F0; box-shadow: 0 30px 70px -30px rgba(15,20,36,.45), 0 0 0 1px var(--line); }
+.cert-frame img { display: block; width: 100%; height: auto; }
+.cert-downloads { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 22px 0 6px; }
+.cert-downloads .btn small { font-weight: 500; opacity: .7; margin-left: 6px; font-size: .78rem; }
+.cert-hint { text-align: center; word-break: break-all; }
+.cert-preview { border-radius: 12px; overflow: hidden; border: 1px solid var(--line); margin: 14px 0 20px; background: #FBF8F0; }
+.cert-preview img { display: block; width: 100%; height: auto; }
+.cert-uploads { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.up-thumb { width: 56px; height: 56px; object-fit: contain; border-radius: 10px; background: #fff; border: 1px solid var(--line); padding: 4px; }
+.up-thumb.sig { width: 120px; }
+label[data-file]::after { content: attr(data-file); display: block; font-size: .72rem; font-weight: 600; color: var(--green); margin-top: 4px; }
+
+/* data-at-risk warning */
+.notice-banner.danger-banner { background: var(--rose-soft); color: var(--rose); border-bottom: 1px solid color-mix(in srgb, var(--rose) 35%, transparent); }
+
+/* ===================================================================== stories: tap the college to open its page */
+.story-author { display: flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; position: relative; z-index: 3; min-width: 0; }
+.story-author small { display: block; opacity: .75; font-size: .72rem; }
+.story-author:hover b { text-decoration: underline; }
+
+@media (max-width: 760px) {
+  .cert-uploads { grid-template-columns: 1fr; }
+  .cert-downloads .btn { width: 100%; justify-content: center; }
+  .station-card .seg { width: 100%; }
+  .station-card .seg label { flex: 1 1 45%; text-align: center; }
+  .jstep { gap: 12px; }
+  .jstep .btn { padding: 6px 10px; }
+}
+
 @media print {
   @page { size: A4 landscape; margin: 0; }
   body { background: #fff; }

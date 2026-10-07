@@ -334,6 +334,14 @@ MIGRATIONS = [
     "ALTER TABLE registrations ADD COLUMN covers TEXT",
     "ALTER TABLE payments ADD COLUMN bundle TEXT",
     "CREATE INDEX IF NOT EXISTS ix_events_parent ON events(parent_id)",
+    # step-by-step event day: entry (attended/checkin_time) -> event completed -> food served
+    "ALTER TABLE registrations ADD COLUMN completed_at TEXT",
+    "ALTER TABLE registrations ADD COLUMN food_at TEXT",
+    # certificates: each college's logo, signature and signatory
+    "ALTER TABLE users ADD COLUMN cert_logo TEXT",
+    "ALTER TABLE users ADD COLUMN cert_signature TEXT",
+    "ALTER TABLE users ADD COLUMN cert_signatory TEXT",
+    "ALTER TABLE users ADD COLUMN cert_signatory_title TEXT",
     "CREATE INDEX IF NOT EXISTS ix_pay_bundle ON payments(bundle)",
 ]
 
@@ -762,7 +770,7 @@ def create_schema():
         state = q("""SELECT to_regclass('public.users') IS NOT NULL AS has_tables,
                             to_regclass('public.media_files') IS NOT NULL AS has_media,
                             EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
-                                    AND table_name='payments' AND column_name='bundle') AS current""", one=True)
+                                    AND table_name='users' AND column_name='cert_signatory_title') AS current""", one=True)
         if not (state["has_tables"] and state["current"] and state["has_media"]):   # first run, or older schema
             print("  First start on this database: creating EventFlow's tables.", flush=True)
             run_sql(pg_schema())

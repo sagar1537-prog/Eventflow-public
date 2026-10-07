@@ -4,13 +4,13 @@
 {% block content %}
 {% set u = g.user %}
 {% set labels = {"profile": ("Edit profile", "user"), "account": ("Account & security", "lock"), "privacy": ("Privacy", "eye"),
-                 "notifications": ("Notifications", "bell"), "appearance": ("Appearance", "moon"), "payments": ("Payments & verification", "wallet"),
+                 "notifications": ("Notifications", "bell"), "appearance": ("Appearance", "moon"), "payments": ("Payments & verification", "wallet"), "certificates": ("Certificates", "award"),
                  "danger": ("Delete account", "trash")} %}
 <div class="page page-enter">
   <div class="head-row"><div><h1>Settings</h1><p>Manage your profile, account and how EventFlow works for you.</p></div></div>
   <div style="display:grid;grid-template-columns:240px minmax(0,1fr);gap:24px" class="settings-grid">
     <nav class="card" style="padding:8px;align-self:start">
-      {% for t in tabs if t != 'payments' or u.role == 'college' %}
+      {% for t in tabs if t not in ('payments', 'certificates') or u.role == 'college' %}
       <a class="nav-item {{ 'active' if tab == t }}" href="{{ url_for('social.settings', tab=t) }}" style="{{ 'color:var(--rose)' if t == 'danger' }}">{{ icon(labels[t][1]) }}<span>{{ labels[t][0] }}</span></a>
       {% endfor %}
       <div class="nav-sep"></div>
@@ -124,6 +124,29 @@
           <textarea id="verification_note" name="verification_note" style="min-height:70px"></textarea></div>
         {% endif %}
         <button class="btn brand">Save</button>
+      </form>
+
+    {% elif tab == 'certificates' %}
+      <h2>Certificate design</h2>
+      <p class="muted-2">Every participation and achievement certificate for your events uses these. Students can download them as a high-resolution PNG or a PDF.</p>
+      <div class="cert-preview"><img src="{{ url_for('social.certificate_preview') }}?v={{ (u.cert_logo or '') ~ (u.cert_signature or '') ~ (u.cert_signatory or '') }}" alt="Preview of your certificate" loading="lazy"></div>
+      <form method="post" enctype="multipart/form-data">
+        {{ csrf_field() }}
+        <div class="cert-uploads">
+          <div class="field"><label>College logo <span class="hint">PNG with a transparent background looks best. Without one we use your profile photo.</span></label>
+            <div class="row" style="gap:12px">{% if u.cert_logo %}<img class="up-thumb" src="{{ url_for('media', rel=u.cert_logo) }}" alt="Current logo">{% endif %}
+              <label class="btn ghost sm" style="margin:0">{{ icon("upload", "ico sm") }}{{ "Replace logo" if u.cert_logo else "Upload logo" }}<input type="file" name="cert_logo" accept="image/png,image/jpeg,image/webp" hidden data-autosubmit-name></label>
+              {% if u.cert_logo %}<label class="check small" style="margin:0"><input type="checkbox" name="remove_cert_logo"> Remove</label>{% endif %}</div></div>
+          <div class="field"><label>Signature <span class="hint">A photo of a signature on white paper works: we remove the paper automatically.</span></label>
+            <div class="row" style="gap:12px">{% if u.cert_signature %}<img class="up-thumb sig" src="{{ url_for('media', rel=u.cert_signature) }}" alt="Current signature">{% endif %}
+              <label class="btn ghost sm" style="margin:0">{{ icon("upload", "ico sm") }}{{ "Replace signature" if u.cert_signature else "Upload signature" }}<input type="file" name="cert_signature" accept="image/png,image/jpeg,image/webp" hidden data-autosubmit-name></label>
+              {% if u.cert_signature %}<label class="check small" style="margin:0"><input type="checkbox" name="remove_cert_signature"> Remove</label>{% endif %}</div></div>
+        </div>
+        <div class="row" style="gap:14px;align-items:flex-start">
+          <div class="field grow"><label for="cert_signatory">Signed by</label><input id="cert_signatory" name="cert_signatory" maxlength="60" value="{{ u.cert_signatory or '' }}" placeholder="Dr. R. Kumar"></div>
+          <div class="field grow"><label for="cert_signatory_title">Their title</label><input id="cert_signatory_title" name="cert_signatory_title" maxlength="80" value="{{ u.cert_signatory_title or '' }}" placeholder="Principal"></div>
+        </div>
+        <button class="btn brand">Save certificate design</button>
       </form>
 
     {% elif tab == 'danger' %}

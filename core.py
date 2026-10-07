@@ -301,6 +301,27 @@ def save_upload(file, allowed=("image", "video", "file"), max_mb=40):
     return {"path": rel, "kind": kind, "size": size, "original": file.filename[:120]}
 
 
+def media_bytes(rel):
+    """Bytes of any stored picture (demo media, an upload on disk, or an upload kept in PostgreSQL), or None."""
+    if not rel:
+        return None
+    try:
+        if rel.startswith("seed/"):
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seed_media", rel[5:])
+            with open(path, "rb") as f:
+                return f.read()
+        if db.is_postgres():
+            data = db.file_read(rel)
+            return data or None
+        full = os.path.normpath(os.path.join(upload_root(), rel))
+        if full.startswith(os.path.normpath(upload_root())) and os.path.isfile(full):
+            with open(full, "rb") as f:
+                return f.read()
+    except OSError:
+        return None
+    return None
+
+
 def delete_upload(rel):
     if not rel or rel.startswith("seed/"):
         return
@@ -384,6 +405,8 @@ def event_stats(event_id):
     scope = "(SELECT id FROM events WHERE id=? OR parent_id=?)"
     a = (event_id, event_id)
     row = q(f"""SELECT COUNT(*) c, COALESCE(SUM(attended),0) a,
+                      COALESCE(SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END),0) done,
+                      COUNT(DISTINCT CASE WHEN food_at IS NOT NULL THEN user_id END) fed,
                       COALESCE(SUM(CASE WHEN food_pref='veg' THEN 1 ELSE 0 END),0) v, COALESCE(SUM(CASE WHEN food_pref='nonveg' THEN 1 ELSE 0 END),0) nv,
                       COALESCE(SUM(CASE WHEN food_pref='none' THEN 1 ELSE 0 END),0) nf, COALESCE(SUM(CASE WHEN slot_start IS NOT NULL THEN 1 ELSE 0 END),0) slotted
                FROM registrations WHERE event_id IN {scope} AND status='confirmed'""", a, one=True)
@@ -395,7 +418,7 @@ def event_stats(event_id):
                 WHERE r.event_id IN {scope} AND r.status='confirmed' GROUP BY label ORDER BY c DESC LIMIT 8""", a)
     colleges = q(f"""SELECT COALESCE(NULLIF(u.college_name,''),'Not set') label, COUNT(*) c FROM registrations r JOIN users u ON u.id=r.user_id
                     WHERE r.event_id IN {scope} AND r.status='confirmed' GROUP BY label ORDER BY c DESC LIMIT 8""", a)
-    return {"registered": row["c"], "attended": row["a"], "veg": row["v"], "nonveg": row["nv"], "nofood": row["nf"],
+    return {"registered": row["c"], "attended": row["a"], "completed": row["done"], "fed": row["fed"], "veg": row["v"], "nonveg": row["nv"], "nofood": row["nf"],
             "slotted": row["slotted"], "review": review, "cancelled": cancelled, "revenue": revenue, "fees": fees,
             "attendance_rate": (row["a"] / row["c"]) if row["c"] else 0,
             "dept": [dict(r) for r in dept], "colleges": [dict(r) for r in colleges]}
@@ -475,6 +498,7 @@ def user_badges(user_id):
 POINTS_PAID_REG = 50      # confirmed registration for a paid event
 POINTS_FREE_REG = 20      # confirmed registration for a free event
 POINTS_ATTEND = 30        # checked in at the event
+POINTS_COMPLETE = 20      # completed the event (completion QR scanned)
 WIN_POINTS = {1: 250, 2: 150, 3: 100, 0: 50}
 WIN_TITLES = {1: "Winner", 2: "Runner-up", 3: "Second runner-up", 0: "Special mention"}
 POINT_VALUE = 1           # ₹ per point
@@ -495,6 +519,7 @@ def reg_points(reg):
 def points_earned_sql(alias="u"):
     return f"""(COALESCE((SELECT SUM(CASE WHEN {PAID_REG_SQL} THEN {POINTS_PAID_REG} ELSE {POINTS_FREE_REG} END)
                           + SUM(CASE WHEN r.attended = 1 THEN {POINTS_ATTEND} ELSE 0 END)
+                          + SUM(CASE WHEN r.completed_at IS NOT NULL THEN {POINTS_COMPLETE} ELSE 0 END)
                           FROM registrations r JOIN events e ON e.id = r.event_id
                           WHERE r.user_id = {alias}.id AND r.status = 'confirmed'), 0)
                + COALESCE((SELECT SUM(w.points) FROM event_winners w WHERE w.user_id = {alias}.id), 0))"""
@@ -526,13 +551,16 @@ def _points_summary(user_id):
 
 def points_history(user_id, limit=60):
     rows = []
-    for r in q("""SELECT r.created_at, r.attended, r.checkin_time, r.amount, r.covers, e.title, e.fee, e.id event_id FROM registrations r
+    for r in q("""SELECT r.created_at, r.attended, r.checkin_time, r.completed_at, r.amount, r.covers, e.title, e.fee, e.id event_id FROM registrations r
                   JOIN events e ON e.id=r.event_id WHERE r.user_id=? AND r.status='confirmed'""", (user_id,)):
         rows.append({"at": r["created_at"], "delta": reg_points(r),
                      "text": f"Registered for {r['title']}", "icon": "🎟️", "event_id": r["event_id"]})
         if r["attended"]:
             rows.append({"at": r["checkin_time"] or r["created_at"], "delta": POINTS_ATTEND,
                          "text": f"Checked in at {r['title']}", "icon": "✅", "event_id": r["event_id"]})
+        if r["completed_at"]:
+            rows.append({"at": r["completed_at"], "delta": POINTS_COMPLETE,
+                         "text": f"Completed {r['title']}", "icon": "🎓", "event_id": r["event_id"]})
     for w in q("""SELECT w.created_at, w.points, w.title, e.title ev, e.id event_id FROM event_winners w JOIN events e ON e.id=w.event_id
                   WHERE w.user_id=?""", (user_id,)):
         rows.append({"at": w["created_at"], "delta": w["points"], "text": f"{w['title']} · {w['ev']}", "icon": "🏆",
@@ -552,13 +580,13 @@ def max_points_for(amount_after_coupon, balance):
 
 
 def user_certificates(user_id):
-    """Certificates a user has earned: participation (checked in) and achievement (winner)."""
+    """Certificates a user has earned: participation (event completed) and achievement (winner)."""
     out = []
-    for r in q("""SELECT r.pass_code, r.checkin_time, r.attended, e.title, e.category, e.start_dt, e.id event_id,
+    for r in q("""SELECT r.pass_code, r.checkin_time, r.completed_at, r.attended, e.title, e.category, e.start_dt, e.id event_id,
                          c.name college, c.avatar college_avatar, w.title win_title, w.position
                   FROM registrations r JOIN events e ON e.id=r.event_id JOIN users c ON c.id=e.college_id
                   LEFT JOIN event_winners w ON w.event_id=r.event_id AND w.user_id=r.user_id
-                  WHERE r.user_id=? AND r.status='confirmed' AND (r.attended=1 OR w.id IS NOT NULL)
+                  WHERE r.user_id=? AND r.status='confirmed' AND (r.completed_at IS NOT NULL OR w.id IS NOT NULL)
                   ORDER BY e.start_dt DESC""", (user_id,)):
         out.append(r)
     return out

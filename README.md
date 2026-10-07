@@ -83,11 +83,30 @@ before `run.bat` (after `reset-demo.bat`).
 
 ## What's inside
 
+**Step-by-step event day.** Every participant's ticket guides them through ordered tasks, each with its own QR code:
+1. 🚪 **Entry**: scanned at the gate (marks attendance),
+2. 🎯 **Event**: the *completion* QR is scanned when they finish, which unlocks their certificate,
+3. 🍽️ **Food**: scanned at the food counter (only if the event serves meals and they chose a meal),
+4. 🎯 **Next events** in the same fest, each with its own completion QR and certificate.
+
+A step unlocks only after the one before it. QR codes are signed, so they can't be faked, and the ticket page
+switches to the next QR by itself a few seconds after a scan. Volunteers pick their station (entry gate, event
+completion, food counter, or "any step") on the check-in desk, which shows live counts for each step. Organisers can
+also tap **Complete for all checked in** at the end of an event.
+
+**Certificates.** A classic A4 design rendered on the server: the college's own logo, a signature (a photo of a
+signature on paper is cleaned up automatically), signatory name and title, a verification QR and a seal. Students
+download a **high-quality PNG (3508 × 2480, 300 dpi)** or a **print-ready PDF**. Colleges set this up under
+**Settings → Certificates**, with a live preview.
+
+**Receipts.** Real PDF receipts (a whole fest order on one receipt) with the organiser's logo, line items, coupon
+and points savings, UPI reference and a verification QR.
+
 **Accounts & settings.** Separate student and college sign-up, login by email / username / mobile, password strength meter,
 password reset, profile photo and cover, privacy (who sees your events, who can message you), notification switches,
 light / dark / system theme, account deletion.
 
-**Community.** Instagram-style feed with stories, multi-photo/video carousels, file attachments, likes (double-tap),
+**Community.** Students and colleges both post. Instagram-style feed (followed colleges, friends and your own posts) with stories (tap the college to open its page), multi-photo/video carousels, file attachments, likes (double-tap),
 comments, saves, share, report. College profiles with blue ticks, followers, post grid, events. Student profiles with
 badges, friends and events. Friend requests, suggestions (mutual friends, same college), direct messages with live updates,
 share events to friends, notifications with live badges, saved items, search with instant suggestions (`/` to focus).

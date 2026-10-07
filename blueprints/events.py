@@ -3,9 +3,11 @@ import calendar as cal
 import re
 from datetime import datetime, date, timedelta
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, g, abort, session, Response
+from flask import Blueprint, render_template, request, redirect, url_for, flash, g, abort, session, Response, jsonify
 
 import core
+import documents
+import journey
 import fest as festlib
 from db import q, ex, scalar, in_clause
 from blueprints.social import hydrate_posts, POST_SELECT, friends_going
@@ -549,7 +551,8 @@ def _reg(code):
     r = q("""SELECT r.*, e.title, e.category, e.venue, e.venue_details, e.start_dt, e.end_dt, e.status event_status,
                     e.banner, e.college_id, e.map_url, e.fee, e.parent_id, e.label, f.title fest_title,
                     u.name, u.username, u.department, u.year, u.college_name, u.avatar,
-                    c.name college, c.username college_username, c.avatar college_avatar
+                    c.name college, c.username college_username, c.avatar college_avatar, c.cert_logo, c.cert_signature,
+                    c.cert_signatory, c.cert_signatory_title
              FROM registrations r JOIN events e ON e.id=r.event_id JOIN users u ON u.id=r.user_id JOIN users c ON c.id=e.college_id
              LEFT JOIN events f ON f.id=e.parent_id
              WHERE r.pass_code=?""", (code,), one=True)
@@ -608,7 +611,19 @@ def ticket(code):
         waitpos = scalar("SELECT COUNT(*) FROM registrations WHERE event_id=? AND status='waitlisted' AND id<=?",
                          (reg["event_id"], reg["id"]))
     win = q("SELECT * FROM event_winners WHERE event_id=? AND user_id=?", (reg["event_id"], reg["user_id"]), one=True)
-    return render_template("events/ticket.html", reg=reg, pay=pay, news=news, waitpos=waitpos, win=win)
+    steps = journey.steps(reg["user_id"], journey.scope_id(reg)) if reg["status"] == "confirmed" else []
+    current = next((s for s in steps if s["state"] == "current"), None)
+    return render_template("events/ticket.html", reg=reg, pay=pay, news=news, waitpos=waitpos, win=win, steps=steps,
+                           current=current, journey_sig=journey.signature(steps))
+
+
+@bp.route("/api/journey/<code>")
+@core.login_required
+def journey_state(code):
+    """Polled by the ticket page: when a volunteer scans a step, the page refreshes to show the next QR."""
+    reg = _reg(code)
+    steps = journey.steps(reg["user_id"], journey.scope_id(reg)) if reg["status"] == "confirmed" else []
+    return jsonify(sig=journey.signature(steps), status=reg["status"])
 
 
 @bp.route("/ticket/<code>/cancel", methods=["POST"])
@@ -637,27 +652,111 @@ def cancel(code):
 def receipt(receipt):
     p = _payment(receipt)
     user = q("SELECT * FROM users WHERE id=?", (p["user_id"],), one=True)
-    return render_template("events/receipt.html", p=p, user=user)
+    return render_template("events/receipt.html", p=p, user=user, items=_items(p))
+
+
+@bp.route("/receipt/<receipt>/receipt.pdf")
+@core.login_required
+def receipt_pdf(receipt):
+    p = _payment(receipt)
+    user = q("SELECT * FROM users WHERE id=?", (p["user_id"],), one=True)
+    college = q("SELECT name, upi_id, avatar, cert_logo FROM users WHERE id=?", (p["college_id"],), one=True)
+    items = _items(p)
+
+    def when(v):
+        d = core.parse_dt(v)
+        return d.strftime("%d %b %Y, %I:%M %p") if d else ""
+    rows = []
+    for i in items:
+        sub = (f"{i['fest_title']} · " if i["fest_title"] else "") + f"Ticket {i['pass_code']}" + \
+            (f" · Team {i['team_name']}" if i["team_name"] else "") + (" · " + when(i["start_dt"]) if i["start_dt"] else "")
+        rows.append((i["title"], sub, i["base_amount"], i["discount"], i["points_used"], i["amount"]))
+    data = {"receipt_no": p["receipt_no"], "status": p["status"], "created_at": when(p["created_at"]),
+            "paid_at": when(p["reviewed_at"]) if p["status"] == "paid" and p["reviewed_at"] else "",
+            "method": p["method"], "utr": p["utr"], "college": college["name"], "college_upi": college["upi_id"],
+            "college_logo": core.media_bytes(college["cert_logo"] or college["avatar"]),
+            "buyer": user["name"], "buyer_username": user["username"], "buyer_email": user["email"], "items": rows,
+            "total": sum(r[5] for r in rows), "base_total": sum(r[2] for r in rows),
+            "discount_total": sum(r[3] or 0 for r in rows), "points_total": sum(r[4] or 0 for r in rows),
+            "note": p["note"], "verify_url": url_for("events.verify", code=p["pass_code"], _external=True),
+            "ticket_codes": [i["pass_code"] for i in items]}
+    resp = Response(documents.receipt_pdf(data), mimetype="application/pdf")
+    resp.headers["Content-Disposition"] = f'attachment; filename="EventFlow-Receipt-{p["receipt_no"]}.pdf"'
+    return resp
 
 
 @bp.route("/certificate/<code>")
 @core.login_required
 def certificate(code):
     reg = _reg(code)
-    win = q("SELECT * FROM event_winners WHERE event_id=? AND user_id=?", (reg["event_id"], reg["user_id"]), one=True)
-    if reg["status"] != "confirmed" or not (reg["attended"] or win):  # winners get one even without a scan
-        flash("Your certificate unlocks once you're checked in at the event.", "info")
+    reg, win = _cert_reg(code)
+    if not reg:
+        flash("Your certificate unlocks once you complete the event (the completion QR on your ticket is scanned).", "info")
         return redirect(url_for("events.ticket", code=code))
-    verify_url = url_for("events.verify", code=code, _external=True)
-    return render_template("events/certificate.html", reg=reg, verify_url=verify_url, win=win)
+    return render_template("events/certificate.html", reg=reg, win=win,
+                           verify_url=url_for("events.verify", code=code, _external=True))
+
+
+def _cert_reg(code):
+    reg = _reg(code)
+    win = q("SELECT * FROM event_winners WHERE event_id=? AND user_id=?", (reg["event_id"], reg["user_id"]), one=True)
+    if reg["status"] != "confirmed" or not (reg["completed_at"] or win):  # winners get one even without a scan
+        return None, None
+    return reg, win
+
+
+def _cert_png(reg, win):
+    def nice_date(v, fmt):
+        d = core.parse_dt(v)
+        return d.strftime(fmt).lstrip("0") if d else ""
+    data = {
+        "name": reg["name"], "kind": "achievement" if win else "participation", "college": reg["college"],
+        "college_name": reg["college_name"] or "", "department": reg["department"] or "", "event": reg["title"],
+        "category": reg["category"], "fest": reg["fest_title"] or "", "date": nice_date(reg["start_dt"], "%d %B %Y"),
+        "venue": reg["venue"], "team": reg["team_name"] or "", "award": win["title"] if win else "",
+        "position": win["position"] if win else 0, "code": reg["pass_code"],
+        "issued": nice_date((win["created_at"] if win else reg["completed_at"]) or reg["start_dt"], "%d %b %Y"),
+        "verify_url": url_for("events.verify", code=reg["pass_code"], _external=True),
+        "logo": core.media_bytes(reg["cert_logo"] or reg["college_avatar"]), "signature": core.media_bytes(reg["cert_signature"]),
+        "signatory": reg["cert_signatory"] or "", "signatory_title": reg["cert_signatory_title"] or "",
+    }
+    return documents.certificate_png(data)
+
+
+@bp.route("/certificate/<code>/certificate.png")
+@core.login_required
+def certificate_png(code):
+    reg, win = _cert_reg(code)
+    if not reg:
+        abort(404)
+    png = _cert_png(reg, win)
+    if request.args.get("preview"):
+        resp = Response(documents.png_preview(png), mimetype="image/jpeg")
+        resp.headers["Cache-Control"] = "private, max-age=300"
+        return resp
+    resp = Response(png, mimetype="image/png")
+    resp.headers["Content-Disposition"] = f'attachment; filename="EventFlow-Certificate-{reg["pass_code"]}.png"'
+    return resp
+
+
+@bp.route("/certificate/<code>/certificate.pdf")
+@core.login_required
+def certificate_pdf(code):
+    reg, win = _cert_reg(code)
+    if not reg:
+        abort(404)
+    pdf = documents.certificate_pdf(_cert_png(reg, win), f"Certificate · {reg['title']} · {reg['name']}")
+    resp = Response(pdf, mimetype="application/pdf")
+    resp.headers["Content-Disposition"] = f'attachment; filename="EventFlow-Certificate-{reg["pass_code"]}.pdf"'
+    return resp
 
 
 @bp.route("/verify/<code>")
 def verify(code):
-    reg = q("""SELECT r.pass_code, r.attended, r.status, r.checkin_time, e.title, e.start_dt, u.name, u.college_name,
+    reg = q("""SELECT r.pass_code, r.attended, r.status, r.checkin_time, r.completed_at, e.title, e.start_dt, u.name, u.college_name,
                       c.name college, w.title win_title, w.position win_position
                FROM registrations r JOIN events e ON e.id=r.event_id JOIN users u ON u.id=r.user_id
                JOIN users c ON c.id=e.college_id LEFT JOIN event_winners w ON w.event_id=r.event_id AND w.user_id=r.user_id
                WHERE r.pass_code=?""", (code,), one=True)
     return render_template("events/verify.html", reg=reg, code=code,
-                           valid=bool(reg and (reg["attended"] or reg["win_title"]) and reg["status"] == "confirmed"))
+                           valid=bool(reg and (reg["completed_at"] or reg["win_title"]) and reg["status"] == "confirmed"))

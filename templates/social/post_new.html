@@ -3,7 +3,7 @@
 {% block title %}New post{% endblock %}
 {% block content %}
 <div class="page narrow page-enter">
-  <div class="head-row"><div><h1>Create a post</h1><p>Share an invitation, poster, teaser video or rulebook with your followers.</p></div></div>
+  <div class="head-row"><div><h1>Create a post</h1><p>{% if g.user.role == 'college' %}Share an invitation, poster, teaser video or rulebook with your followers.{% else %}Share event photos, your team, a project or a win with your friends.{% endif %}</p></div></div>
   <form class="card pad-lg" method="post" enctype="multipart/form-data">
     {{ csrf_field() }}
     <div class="row nw" style="margin-bottom:16px">{{ avatar(g.user.name, g.user.avatar, "md") }}<b>{{ g.user.name }}{{ vtick(g.user.verification) }}</b></div>
@@ -18,7 +18,7 @@
     <div class="field"><label for="caption">Caption</label>
       <textarea id="caption" name="caption" maxlength="2200" data-maxlen="#cap-count" placeholder="Tell people what's happening. Use #tags and @mentions.">{{ form.get('caption', '') }}</textarea>
       <span class="hint" id="cap-count" style="float:right"></span></div>
-    <div class="field"><label for="event_id">Link an event <span class="hint">(adds a Register button under the post)</span></label>
+    <div class="field"><label for="event_id">Link an event <span class="hint">{% if g.user.role == 'college' %}(adds a Register button under the post){% else %}(one you registered for){% endif %}</span></label>
       <select id="event_id" name="event_id"><option value="">No event</option>
         {% for e in my_events %}<option value="{{ e.id }}" {{ 'selected' if form.get('event_id')|string == e.id|string }}>{{ e.title }}</option>{% endfor %}</select></div>
     <div class="row between"><a class="btn ghost" href="{{ url_for('social.profile', username=g.user.username) }}">Cancel</a><button class="btn brand lg" type="submit">{{ icon("send", "ico sm") }}Share post</button></div>

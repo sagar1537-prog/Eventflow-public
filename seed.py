@@ -322,10 +322,12 @@ def seed(app):
             created = now - timedelta(hours=rnd.uniform(1, 72))
         code = core.gen_code("EVF-", "registrations", "pass_code")
         food = rnd.choices(["veg", "nonveg", "none"], [6, 3, 1])[0]
+        done = attended and start < now     # past events people attended are complete (certificate unlocked)
         rid = ex("""INSERT INTO registrations (event_id, user_id, pass_code, team_name, food_pref, status, amount, attended,
-                                               checkin_time, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                                               checkin_time, completed_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                  (eid[ekey], sid[uname], code, team, food, status, e["fee"], 1 if attended else 0,
-                  core.iso(start + timedelta(minutes=rnd.randint(-15, 40))) if attended else None, ts(created)))
+                  core.iso(start + timedelta(minutes=rnd.randint(-15, 40))) if attended else None,
+                  core.iso(start + timedelta(hours=3)) if done else None, ts(created)))
         if e["fee"] or status == "confirmed":
             pstat = pay_status or ("paid" if status == "confirmed" else "submitted")
             m = "free" if not e["fee"] else method

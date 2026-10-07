@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, status_pill, empty with context %}
+{% block title %}Studio{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row">
+    <div><h1>{{ "Studio" if g.user.role != 'student' else "Your event team" }}</h1>
+      <p>{% if g.user.role == 'college' %}Everything about your events, live.{% elif g.user.role == 'dev' %}You're viewing every event as the developer.{% else %}Events you've been given access to by their colleges.{% endif %}</p></div>
+    {% if g.user.role == 'college' %}<div class="row"><a class="btn ghost" href="{{ url_for('social.post_new') }}">{{ icon("image", "ico sm") }}New post</a><a class="btn brand" href="{{ url_for('studio.event_new') }}">{{ icon("plus", "ico sm") }}New event</a></div>{% endif %}
+  </div>
+  {% include "studio/_nav.html" %}
+
+  {% if g.user.role == 'college' and g.user.verification != 'verified' %}
+  <div class="verify-banner"><span style="font-size:1.5rem">{{ "⏳" if g.user.verification == 'pending' else "🏷️" }}</span>
+    <div class="grow"><b>{{ "Verification in review" if g.user.verification == 'pending' else "Get the blue tick" }}</b>
+      <div class="small muted-2">{{ "The EventFlow team is reviewing your college. You can create events meanwhile." if g.user.verification == 'pending' else "Verified colleges rank higher in Explore and earn more trust." }}</div></div>
+    {% if g.user.verification != 'pending' %}<a class="btn sm" href="{{ url_for('social.settings', tab='payments') }}">Request verification</a>{% endif %}</div>
+  {% endif %}
+  {% if kpis.review %}
+  <div class="verify-banner ok"><span style="font-size:1.5rem">💳</span><div class="grow"><b>{{ kpis.review }} payment{{ 's' if kpis.review != 1 }} waiting for verification</b>
+    <div class="small muted-2">Check the UTRs against your UPI app and approve them so tickets activate.</div></div></div>
+  {% endif %}
+
+  <div class="kpis">
+    <div class="kpi reveal"><span>Registrations</span><b data-count="{{ kpis.registrations }}">{{ kpis.registrations }}</b><small>across {{ kpis.events }} events, {{ kpis.live }} open</small></div>
+    <div class="kpi reveal"><span>Checked in</span><b data-count="{{ kpis.checked_in }}">{{ kpis.checked_in }}</b><small>{% if kpis.show_rate is not none %}{{ kpis.show_rate|pct }} show-up rate{% else %}no completed events yet{% endif %}</small></div>
+    <div class="kpi hl reveal"><span>Collected</span><b data-count="{{ kpis.gross }}" data-prefix="₹">{{ kpis.gross|inr }}</b><small>{{ kpis.net|inr }} after {{ kpis.fees|inr }} platform fee</small></div>
+    {% if kpis.followers is not none %}<div class="kpi dark reveal"><span>Followers</span><b data-count="{{ kpis.followers }}">{{ kpis.followers }}</b><small>+{{ kpis.new_followers }} this week</small></div>{% endif %}
+  </div>
+
+  <div class="cols-2">
+    <section class="card reveal">
+      <div class="card-head"><h3>Registrations and revenue, last 14 days</h3>
+        <div class="legend"><span><i style="--c:#4C6FFF"></i>Registrations</span><span><i style="--c:#E39A12"></i>Revenue (₹)</span></div></div>
+      <div class="chart" style="height:200px"><canvas id="c-regs" role="img" aria-label="Daily registrations"></canvas></div>
+      <div class="chart" style="height:120px;margin-top:10px"><canvas id="c-rev" role="img" aria-label="Daily revenue"></canvas></div>
+    </section>
+    <section class="card reveal">
+      <div class="card-head"><h3>Latest payments</h3></div>
+      {% for p in recent %}
+      <div class="suggest">{{ avatar(p.name, None, "sm") }}<span class="grow"><b>{{ p.name }}</b><small>{{ p.title }} · {{ p.created_at|rel }}</small></span>
+        <span class="r"><b class="num">{{ p.amount|inr }}</b><br>{% if p.status == 'submitted' %}<span class="pill amber">Verify</span>{% else %}<span class="pill green">Paid</span>{% endif %}</span></div>
+      {% else %}<p class="muted">No payments yet.</p>{% endfor %}
+    </section>
+  </div>
+
+  <section class="reveal">
+    <div class="card-head"><h3>Your events</h3></div>
+    {% if events %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Event</th><th>When</th><th>Status</th><th class="r">Registered</th><th class="r">Checked in</th><th class="r">To verify</th><th class="r">Collected</th><th></th></tr></thead>
+        <tbody>
+        {% for e in events %}
+          <tr>
+            <td><a href="{{ url_for('studio.event', eid=e.id) }}" class="row nw"><span class="av av-md sq" style="--h:{{ e.title|hue }}">{% if e.banner %}<img src="{{ url_for('media', rel=e.banner) }}" alt="">{% else %}{{ e.category|cat_emoji }}{% endif %}</span><span><b>{{ e.title }}</b>{% if e.kind == 'fest' %}<br><small class="muted">🎪 Fest · {{ e.sub_count }} events</small>{% endif %}</span></a></td>
+            <td class="nowrap">{{ e.start_dt|dt("%d %b, %I:%M %p") }}</td>
+            <td>{{ status_pill(e.status) }}</td>
+            <td class="r">{{ e.reg_count }}{% if e.kind != 'fest' %}<span class="muted">/{{ e.capacity }}</span>{% endif %}</td>
+            <td class="r">{{ e.att_count }}</td>
+            <td class="r">{% if e.review_count %}<span class="pill amber">{{ e.review_count }}</span>{% else %}—{% endif %}</td>
+            <td class="r">{{ e.revenue|inr }}</td>
+            <td class="nowrap"><a class="btn sm" href="{{ url_for('studio.event', eid=e.id) }}">Manage</a> <a class="btn ghost sm" href="{{ url_for('studio.checkin', eid=e.id) }}" aria-label="Check-in scanner">{{ icon("scan", "ico sm") }}</a></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      {{ empty("🎪", "No events yet", "Create a single event or a whole fest with many events, then share a post to fill the seats.", url_for('studio.event_new') if g.user.role == 'college' else None, "Create event or fest") }}
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/chart.umd.js') }}"></script>
+<script>
+(() => {
+  if (!window.Chart) return;
+  const d = {{ charts|tojson }};
+  const css = getComputedStyle(document.documentElement);
+  Chart.defaults.font.family = '"Public Sans", system-ui, sans-serif';
+  Chart.defaults.color = css.getPropertyValue("--ink-3").trim() || "#8189A0";
+  const grid = { color: css.getPropertyValue("--line-2").trim() || "#EDEFF5" };
+  const tip = { backgroundColor: "#0F1424", padding: 10, cornerRadius: 10, displayColors: false };
+  new Chart(document.getElementById("c-regs"), { type: "line",
+    data: { labels: d.labels, datasets: [{ data: d.regs, borderColor: "#4C6FFF", backgroundColor: "rgba(76,111,255,.12)", fill: true, borderWidth: 2.5,
+      cubicInterpolationMode: "monotone", pointRadius: 0, pointHoverRadius: 5 }] },
+    options: { maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { label: (c) => c.parsed.y + " registrations" } } },
+      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 7 } }, y: { beginAtZero: true, grid, border: { display: false }, ticks: { precision: 0 } } } } });
+  new Chart(document.getElementById("c-rev"), { type: "bar",
+    data: { labels: d.labels, datasets: [{ data: d.revenue, backgroundColor: "#E39A12", borderRadius: 4, maxBarThickness: 18 }] },
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { label: (c) => "₹" + c.parsed.y.toLocaleString("en-IN") } } },
+      scales: { x: { display: false }, y: { beginAtZero: true, grid, border: { display: false }, ticks: { maxTicksLimit: 3, callback: (v) => "₹" + v } } } } });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,44 @@
+{# Startup motion graphic: "EventFlow" morphs into "By Team Tech Knights", then the site opens. Once per browser session. #}
+<div id="ef-intro" aria-hidden="true">
+  <div class="ei-bg"><i></i><i></i><i></i></div>
+  <div class="ei-grid"></div>
+  <div class="ei-stage">
+    <div class="ei-emblem">
+      <span class="ei-mark"><i></i></span>
+      <span class="ei-knight">♞&#xFE0E;</span>
+      <span class="ei-ring"></span>
+    </div>
+    <div class="ei-words">
+      <div class="ei-word ei-a">{% for ch in "EventFlow" %}<span style="--i:{{ loop.index0 }}">{{ ch }}</span>{% endfor %}</div>
+      <div class="ei-word ei-b">
+        <span class="ei-by">{% for ch in "By Team" %}<span style="--i:{{ loop.index0 }}">{{ " " if ch == " " else ch }}</span>{% endfor %}</span>
+        <span class="ei-tk">{% for ch in "Tech Knights" %}<span style="--i:{{ loop.index0 + 7 }}">{{ " " if ch == " " else ch }}</span>{% endfor %}</span>
+      </div>
+    </div>
+    <div class="ei-bar"><i></i></div>
+    <div class="ei-tag">Discover · Register · Show up</div>
+  </div>
+  <button class="ei-skip" type="button">Skip</button>
+</div>
+<script>
+(function () {
+  var el = document.getElementById("ef-intro"), root = document.documentElement;
+  var skip = false;
+  var force = /[?&]intro=1\b/.test(location.search);
+  try { skip = !force && (sessionStorage.getItem("ef-intro") === "1" || matchMedia("(prefers-reduced-motion: reduce)").matches || navigator.webdriver); sessionStorage.setItem("ef-intro", "1"); } catch (e) {}
+  if (skip) { el.remove(); return; }
+  root.classList.add("intro-on");
+  var done = false;
+  function finish() {
+    if (done) return; done = true;
+    el.classList.add("ei-exit");
+    root.classList.add("intro-reveal");
+    setTimeout(function () { el.remove(); root.classList.remove("intro-on"); }, 1100);
+    setTimeout(function () { root.classList.remove("intro-reveal"); }, 1500);
+  }
+  el.classList.add("ei-play");
+  setTimeout(finish, 3600);
+  el.querySelector(".ei-skip").addEventListener("click", finish);
+  el.addEventListener("dblclick", finish);
+})();
+</script>

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Certificate check{% endblock %}
+{% block content %}
+<div class="page narrow page-enter" style="padding-top:40px">
+  <div class="card pad-lg center">
+    {% if valid %}
+      <svg class="check-anim" viewBox="0 0 110 110"><circle cx="55" cy="55" r="50"/><path d="M33 57 l15 15 l30 -32"/></svg>
+      <h1>Genuine certificate</h1>
+      <p class="muted-2"><b>{{ reg.name }}</b>{% if reg.college_name %} of {{ reg.college_name }}{% endif %} {% if reg.win_title %}secured <b>{{ reg.win_title }}</b> at{% else %}attended{% endif %} <b>{{ reg.title }}</b> by {{ reg.college }} on {{ reg.start_dt|date }}.</p>
+      <p class="small muted mb-0">Certificate no. {{ code }}{% if reg.checkin_time %} · checked in {{ reg.checkin_time|dt("%d %b %Y, %I:%M %p") }}{% endif %}</p>
+    {% else %}
+      <div style="font-size:3rem">⚠️</div>
+      <h1>Not a valid certificate</h1>
+      <p class="muted-2 mb-0">{% if reg %}This ticket exists, but attendance was never recorded, so no certificate was issued.{% else %}No certificate matches <b>{{ code }}</b>.{% endif %}</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

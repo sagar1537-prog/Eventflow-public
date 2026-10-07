@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, grid_tile, reg_pill, status_pill with context %}
+{% block title %}{{ e.title }}{% endblock %}
+{% block event_id %}{{ e.id }}{% endblock %}
+{% block body_class %}has-cta{% endblock %}
+{% block content %}
+{% set color = e.category|cat_color %}
+{% set left = [e.capacity - taken, 0]|max %}
+{% set pct = (taken / e.capacity * 100) if e.capacity else 0 %}
+<div class="page wide page-enter" style="--c: {{ color }}">
+  {% if parent %}<a class="fest-parent" href="{{ url_for('events.detail', eid=parent.id) }}#track-{{ track.id if track else '' }}"><span class="e">🎪</span>Part of {{ parent.title }}{% if track %} · {{ track.name }}{% endif %}{{ icon("right", "ico sm") }}</a>{% endif %}
+  <section class="ev-hero">
+    {% set hero_banner = e.banner or (parent.banner if parent else None) %}
+    <div class="bg" style="background-image: {% if hero_banner %}url('{{ url_for('media', rel=hero_banner) }}'){% else %}linear-gradient(135deg, {{ color }}, #0F1424){% endif %}"></div>
+    <div class="actions">
+      {% if g.user %}<button class="iconbtn {{ 'saved' if saved }}" data-save-event="{{ e.id }}" aria-label="Save event" type="button">{{ icon("bookmark") }}</button>{% endif %}
+      <button class="iconbtn" data-share="{{ url_for('events.detail', eid=e.id) }}" data-title="{{ e.title }}" aria-label="Share" type="button">{{ icon("share") }}</button>
+      {% if friends_list %}<button class="iconbtn" data-modal-open="share-friends" aria-label="Send to friends" type="button">{{ icon("send") }}</button>{% endif %}
+    </div>
+    <div class="in">
+      <div class="row" style="gap:6px">
+        <span class="pill dark">{{ e.category|cat_emoji }} {{ e.category }}</span>
+        {% if e.status != 'open' %}<span class="pill dark">{{ {"closed": "Registration closed", "completed": "Event ended", "draft": "Draft (only you can see this)"}[e.status] }}</span>{% endif %}
+        {% if e.is_featured %}<span class="pill brand">★ Featured</span>{% endif %}
+      </div>
+      <h1>{{ e.title }}</h1>
+      {% if e.tagline %}<p>{{ e.tagline }}</p>{% endif %}
+      <a class="by" href="{{ url_for('social.profile', username=e.college_username) }}">{{ avatar(e.college, e.college_avatar, "sm") }}{{ e.college }}{{ vtick(e.verification) }}</a>
+    </div>
+  </section>
+
+  <div class="ev-grid">
+    <div class="stack-lg">
+      {% if winners %}
+      {% set podium = winners|selectattr('position', 'gt', 0)|list %}
+      {% set extra = winners|selectattr('position', 'equalto', 0)|list %}
+      <section class="card pad-lg winners-card reveal" id="winners">
+        <div class="card-head"><h2>🏆 Winners</h2><span class="pill brand">Results are in</span></div>
+        {% if podium %}
+        <div class="podium">
+          {% for pos in [2, 1, 3] %}{% for w in podium if w.position == pos %}
+          <div class="pod p{{ pos }}" style="--d: {{ {1: '.35s', 2: '.15s', 3: '.5s'}[pos] }}">
+            <div class="who">
+              <span class="av-stack">{% for m in w.members[:4] %}<a href="{{ url_for('social.profile', username=m.username) }}">{{ avatar(m.name, m.avatar, "md") }}</a>{% endfor %}</span>
+              <b>{{ w.label }}</b><small>{{ w.title }}</small>
+            </div>
+            <div class="step"><span class="medal">{{ {1: "🥇", 2: "🥈", 3: "🥉"}[pos] }}</span><i>{{ pos }}</i></div>
+          </div>
+          {% endfor %}{% endfor %}
+        </div>
+        {% endif %}
+        {% for w in extra %}<div class="win-row"><span class="medal">🏅</span>{{ avatar(w.members[0].name, w.members[0].avatar, "sm") }}<span class="grow"><b>{{ w.label }}</b><small class="muted">{{ w.title }}</small></span></div>{% endfor %}
+      </section>
+      {% endif %}
+      <div class="facts">
+        <div class="fact reveal"><span class="ic">{{ icon("calendar") }}</span><div><small>Date</small><b>{{ e.start_dt|dt("%A, %d %B") }}</b>{% if e.start_dt[:10] != e.end_dt[:10] %}<br><small>until {{ e.end_dt|dt("%a %d %b, %I:%M %p") }}</small>{% endif %}</div></div>
+        <div class="fact reveal"><span class="ic">{{ icon("clock") }}</span><div><small>Time</small><b>{{ e.start_dt|time }} to {{ e.end_dt|time }}</b><br><small>{{ e.start_dt|until }}</small></div></div>
+        <div class="fact reveal"><span class="ic">{{ icon("pin") }}</span><div><small>Venue</small><b>{{ e.venue }}{% if e.city %}, {{ e.city }}{% endif %}</b>{% if e.venue_details %}<br><small>{{ e.venue_details }}</small>{% endif %}
+          {% if e.map_url %}<br><a class="link small" href="{{ e.map_url }}" target="_blank" rel="noopener">Open in Maps</a>{% endif %}</div></div>
+        <div class="fact reveal"><span class="ic">{{ icon("users") }}</span><div><small>Format</small><b>{{ "Solo" if e.team_size == 1 else "Teams of up to " ~ e.team_size }}</b><br><small>{{ e.meals_count }} meal{{ 's' if e.meals_count != 1 }} included</small></div></div>
+      </div>
+
+      {% if going %}
+      <div class="card reveal row nw"><span class="av-stack">{% for f in going[:5] %}<a href="{{ url_for('social.profile', username=f.username) }}">{{ avatar(f.name, f.avatar, "md") }}</a>{% endfor %}</span>
+        <span><b>{{ going[0].name.split()[0] }}{% if going|length > 1 %} and {{ going|length - 1 }} other friend{{ 's' if going|length > 2 }}{% endif %}</b> {{ "are" if going|length > 1 else "is" }} going</span></div>
+      {% endif %}
+
+      <section class="card pad-lg reveal">
+        <h2>About</h2>
+        <div class="prose muted-2" style="font-size:1rem">{{ (e.description or e.tagline or "Details coming soon.")|rich }}</div>
+      </section>
+
+      {% if schedule %}
+      <section class="card pad-lg reveal" id="schedule">
+        <div class="card-head"><h2>Schedule</h2><a class="btn ghost sm" href="{{ url_for('events.ics', eid=e.id) }}">{{ icon("calendar", "ico sm") }}Add to calendar</a></div>
+        <ol class="timeline">
+          {% set ns = namespace(day=None) %}
+          {% for s in schedule %}
+            {% set d = s.start_dt|dt("%A, %d %B") %}
+            {% if d != ns.day %}{% set ns.day = d %}<li class="day">{{ d }}</li>{% endif %}
+            {% set mine = my_reg and my_reg.slot_start and s.start_dt <= my_reg.slot_start and (s.end_dt or s.start_dt) >= my_reg.slot_start %}
+            <li class="{{ 'mine' if mine }}"><span class="t">{{ s.start_dt|time }}{% if s.end_dt %}<small>{{ s.end_dt|time }}</small>{% endif %}</span><span class="d"></span>
+              <span class="w"><b>{{ s.title }}</b><span>{{ s.venue or e.venue }}{% if mine %} · your slot is in this session{% endif %}</span></span></li>
+          {% endfor %}
+        </ol>
+      </section>
+      {% endif %}
+
+      {% if news %}
+      <section class="card pad-lg reveal" id="updates">
+        <h2>Updates</h2>
+        {% for a in news %}
+        <div class="note {{ 'important' if a.priority == 'important' }} {{ 'slot' if a.kind == 'slot' }}"><span class="bar"></span>
+          <div><b>{{ a.title }}</b><p>{{ a.body|rich }}</p><span class="tiny muted">{% if a.priority == 'important' %}<span class="pill rose">Important</span> {% endif %}{{ a.created_at|rel }}</span></div></div>
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      {% if posts %}
+      <section class="reveal"><h2>Posts about this event</h2><div class="pgrid">{% for p in posts %}{{ grid_tile(p) }}{% endfor %}</div></section>
+      {% endif %}
+
+      {% if faqs %}
+      <section class="card pad-lg faq reveal">
+        <h2>Questions</h2>
+        {% for f in faqs %}<details><summary>{{ f.question }}</summary><p>{{ f.answer }}</p></details>{% endfor %}
+        <p class="muted small" style="margin:14px 0 0">Something else? <button class="linkish" data-ask type="button">Ask the assistant</button></p>
+      </section>
+      {% endif %}
+    </div>
+
+    <aside class="reg-box" id="register">
+      <div class="card pad-lg">
+        {% if track and track.pricing == 'pass' %}<div class="price">{{ track.pass_fee|inr if track.pass_fee else "Free" }} <small>{{ track.name }} pass</small></div>
+        {% else %}<div class="price">{{ "Free" if not e.fee else e.fee|inr }} {% if e.fee %}<small>{{ "per team" if e.fee_type == 'team' else "per person" }}</small>{% endif %}</div>{% endif %}
+        <div class="seatbar"><div class="meter"><i style="width: {{ [pct, 100]|min }}%"></i></div>
+          <div class="row between"><span>{{ taken }} going</span><span>{{ left }} seat{{ 's' if left != 1 }} left</span></div></div>
+
+        {% if my_reg and my_reg.status in ('confirmed', 'payment_review', 'pending_payment', 'waitlisted') %}
+          {% if my_reg.status == 'confirmed' %}
+            <div class="status-box ok"><b>You're going! 🎉</b><span>{% if my_reg.slot_start %}Your slot: {{ my_reg.slot_start|dt("%a %d %b, %I:%M %p") }} in {{ my_reg.slot_venue }}{% else %}Show your QR ticket at the entry desk.{% endif %}</span></div>
+            <a class="btn brand block lg" href="{{ url_for('events.ticket', code=my_reg.pass_code) }}">{{ icon("qr", "ico sm") }}Open my ticket</a>
+            {% if my_reg.attended %}<a class="btn ghost block" style="margin-top:8px" href="{{ url_for('events.certificate', code=my_reg.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>{% endif %}
+          {% elif my_reg.status == 'payment_review' %}
+            <div class="status-box wait"><b>Payment being verified</b><span>{{ e.college }} is checking your UTR. Your seat is held.</span></div>
+            <a class="btn ghost block" href="{{ url_for('events.ticket', code=my_reg.pass_code) }}">View ticket status</a>
+          {% elif my_reg.status == 'pending_payment' %}
+            <div class="status-box bad"><b>{{ "Payment rejected" if my_payment and my_payment.status == 'rejected' else "Finish your payment" }}</b><span>{{ my_payment.note if my_payment and my_payment.note else "Your seat is confirmed once payment is done." }}</span></div>
+            {% if my_payment %}<a class="btn brand block lg" href="{{ url_for('events.checkout', receipt=my_payment.receipt_no) }}">Complete payment</a>{% endif %}
+          {% else %}
+            <div class="status-box wait"><b>You're on the waitlist</b><span>We'll notify you the moment a seat opens.</span></div>
+          {% endif %}
+        {% elif parent and is_open and parent.status == 'open' %}
+          {% if not g.user %}<a class="btn brand block lg" href="{{ url_for('auth.login', next=request.path) }}">Log in to register</a>
+          {% elif g.user.role != 'student' %}<p class="muted mb-0">Only student accounts can register. {% if can_manage %}You manage this event.{% endif %}</p>
+          {% else %}
+          <form method="post" action="{{ url_for('events.join', eid=parent.id) }}">
+            {{ csrf_field() }}<input type="hidden" name="pick" value="{{ e.id }}">
+            {% if sub_quote.pass %}
+              <div class="status-box {{ 'ok' if sub_quote.held and sub_quote.held.status == 'confirmed' else 'wait' }}"><b>{% if sub_quote.held %}Included in your {{ track.name }} pass{% else %}{{ track.name }} pass · {{ sub_quote.price|inr }}{% endif %}</b>
+                <span>{% if sub_quote.held %}{{ "No extra charge." if sub_quote.held.status == 'confirmed' else "Finish paying for your pass first." }}{% else %}One pass covers every event in {{ track.name }}.{% endif %}</span></div>
+            {% endif %}
+            <div class="field"><label>Food preference</label>
+              <div class="seg">{% for v, l in [("veg", "🥗 Veg"), ("nonveg", "🍗 Non-veg"), ("none", "No meal")] %}<label><input type="radio" name="food_pref" value="{{ v }}" {{ 'checked' if loop.first }}>{{ l }}</label>{% endfor %}</div></div>
+            {% if e.team_size > 1 %}
+            <div class="field"><label for="team">Team name <span class="hint">teammates enter the same name</span></label><input id="team" name="team_{{ e.id }}" maxlength="60" required placeholder="e.g. Null Pointers">
+              {% if e.fee_type == 'team' and e.fee and not sub_quote.pass %}<small class="hint">The captain pays {{ e.fee|inr }} for the whole team. Joining an existing team is free.</small>{% endif %}</div>
+            {% endif %}
+            <button class="btn brand block lg" type="submit" style="margin-top:14px">{% if sub_quote.price %}Register & pay {{ sub_quote.price|inr }}{% else %}Register{% endif %}</button>
+            <a class="btn ghost block" style="margin-top:8px" href="{{ url_for('events.detail', eid=parent.id) }}#pick">Pick more {{ parent.title }} events</a>
+          </form>
+          {% endif %}
+        {% elif is_open and not parent %}
+          {% if g.user and g.user.role == 'student' %}
+          <form method="post" action="{{ url_for('events.register', eid=e.id) }}">
+            {{ csrf_field() }}
+            <div class="field"><label>Food preference</label>
+              <div class="seg">{% for v, l in [("veg", "🥗 Veg"), ("nonveg", "🍗 Non-veg"), ("none", "No meal")] %}<label><input type="radio" name="food_pref" value="{{ v }}" {{ 'checked' if loop.first }}>{{ l }}</label>{% endfor %}</div></div>
+            {% if e.team_size > 1 %}
+            <div class="field"><label for="team">Team name <span class="hint">teammates enter the same name</span></label><input id="team" name="team_name" maxlength="60" required placeholder="e.g. Null Pointers"></div>
+            {% endif %}
+            {% if e.fee %}
+            <div class="field"><label for="coupon">Coupon code <span class="hint">(optional)</span></label>
+              <div class="row nw"><input id="coupon" name="coupon" maxlength="20" style="text-transform:uppercase" autocomplete="off"><button class="btn soft" type="button" id="apply-coupon" data-noload>Apply</button></div>
+              <small class="hint" id="coupon-msg"></small></div>
+            <div class="line-items" id="price-lines">
+              <div><span>Ticket</span><span>{{ e.fee|inr }}</span></div>
+              <div id="disc-row" hidden><span>Discount</span><span id="disc-val"></span></div>
+              <div class="total"><span>Total</span><span id="total-val">{{ e.fee|inr }}</span></div>
+            </div>
+            {% endif %}
+            <button class="btn brand block lg" type="submit" style="margin-top:14px">{{ "Register & pay" if e.fee else "Register for free" }}</button>
+            <div class="pts-hint"><span class="coin-sm">★</span><span>Earn <b>+{{ reg_pts }} points</b>{% if e.fee and pts and pts.balance %} · use your {{ pts.balance }} pts to save up to {{ [pts.balance, (e.fee * max_pct / 100)|int]|min|inr }} at checkout{% endif %}</span></div>
+            <p class="tiny muted center" style="margin:10px 0 0">{{ "Pay by UPI on the next step. Cancel any time before the event for a refund." if e.fee else "Your QR ticket is issued instantly." }}</p>
+          </form>
+          {% elif g.user %}
+            <p class="muted mb-0">Only student accounts can register. {% if can_manage %}You manage this event.{% endif %}</p>
+          {% else %}
+            <a class="btn brand block lg" href="{{ url_for('auth.login', next=request.path) }}">Log in to register</a>
+            <p class="tiny muted center" style="margin:10px 0 0">New? <a class="link" href="{{ url_for('auth.signup_student') }}">Create a free account</a></p>
+          {% endif %}
+        {% else %}
+          <div class="status-box bad"><b>{{ reason if (not parent or parent.status == 'open') else "Registration for " ~ parent.title ~ " isn't open." }}</b>{% if waitlisted %}<span>{{ waitlisted }} on the waitlist</span>{% endif %}</div>
+          {% if reason == "All seats are taken." and g.user and g.user.role == 'student' and not parent %}
+          <form method="post" action="{{ url_for('events.register', eid=e.id) }}">
+            {{ csrf_field() }}<input type="hidden" name="waitlist" value="1">
+            {% if e.team_size > 1 %}<div class="field"><input name="team_name" required placeholder="Team name"></div>{% endif %}
+            <button class="btn ghost block lg">Join the waitlist</button></form>
+          {% endif %}
+        {% endif %}
+
+        {% if can_manage %}<hr class="sep"><a class="btn ghost block" href="{{ url_for('studio.event', eid=e.id) }}">{{ icon("studio", "ico sm") }}Manage in Studio</a>{% endif %}
+        {% if e.reg_deadline and e.status == 'open' %}<p class="tiny muted center" style="margin:12px 0 0">Registration closes {{ e.reg_deadline|dt }}</p>{% endif %}
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <div class="row nw">
+          <a href="{{ url_for('social.profile', username=e.college_username) }}">{{ avatar(e.college, e.college_avatar, "md") }}</a>
+          <a class="grow" href="{{ url_for('social.profile', username=e.college_username) }}"><b>{{ e.college }}{{ vtick(e.verification) }}</b><br><small class="muted">{{ e.college_city or '' }}</small></a>
+          {% if g.user and g.user.id != e.college_id %}<button class="btn sm {{ 'ghost' if following else 'brand' }}" data-follow="{{ e.college_id }}" type="button">{{ "Following" if following else "Follow" }}</button>{% endif %}
+        </div>
+      </div>
+      {% if attendees %}
+      <div class="card" style="margin-top:14px"><h4>Who's going</h4><div class="av-stack">{% for a in attendees %}<a href="{{ url_for('social.profile', username=a.username) }}" title="{{ a.name }}">{{ avatar(a.name, a.avatar, "sm") }}</a>{% endfor %}</div></div>
+      {% endif %}
+      {% if more %}
+      <div class="card" style="margin-top:14px"><h4>More from {{ e.college }}</h4>
+        {% for m in more %}<a class="suggest" href="{{ url_for('events.detail', eid=m.id) }}"><span class="av av-md sq" style="--h:{{ m.title|hue }}">{% if m.banner %}<img src="{{ url_for('media', rel=m.banner) }}" alt="">{% else %}{{ m.category|cat_emoji }}{% endif %}</span>
+          <span class="grow"><b class="ellipsis" style="display:block">{{ m.title }}</b><small>{{ m.start_dt|dt("%d %b") }} · {{ "Free" if not m.fee else m.fee|inr }}</small></span></a>{% endfor %}
+      </div>
+      {% endif %}
+      {% if g.user and not can_manage %}
+      <form method="post" action="{{ url_for('social.report') }}" style="margin-top:12px;text-align:center">{{ csrf_field() }}
+        <input type="hidden" name="target_type" value="event"><input type="hidden" name="target_id" value="{{ e.id }}"><input type="hidden" name="reason" value="Misleading or fake event">
+        <button class="linkish tiny" style="color:var(--ink-3)">Report this event</button></form>
+      {% endif %}
+    </aside>
+  </div>
+</div>
+
+{% if friends_list %}
+<div class="modal" id="share-friends" hidden>
+  <form class="modal-card" data-share-friends="{{ e.id }}">
+    <button class="iconbtn x" type="button" data-modal-close aria-label="Close">{{ icon("x") }}</button>
+    <h3>Send to friends</h3>
+    <p class="muted small">They'll get it in their messages.</p>
+    <div style="max-height:320px;overflow:auto">
+      {% for f in friends_list %}<label class="check suggest" style="margin:0"><input type="checkbox" name="to" value="{{ f.id }}">{{ avatar(f.name, f.avatar, "sm") }}<span><b>{{ f.name }}</b><small>@{{ f.username }}</small></span></label>{% endfor %}
+    </div>
+    <button class="btn brand block" style="margin-top:14px" data-noload>{{ icon("send", "ico sm") }}Send</button>
+  </form>
+</div>
+{% endif %}
+{% if not g.user or g.user.role == 'student' %}
+<div class="mobile-cta" data-cta>
+  <div class="grow"><b>{% if sub_quote %}{{ "Free" if not sub_quote.price else sub_quote.price|inr }}{% elif track and track.pricing == 'pass' %}{{ track.name.split()[0] }} pass{% else %}{{ "Free" if not e.fee else e.fee|inr }}{% endif %}</b><small>{{ [e.capacity - taken, 0]|max }} seats left{% if e.start_dt %} · {{ e.start_dt|dt("%d %b") }}{% endif %}</small></div>
+  {% if my_reg and my_reg.status == 'confirmed' %}<a class="btn brand" href="{{ url_for('events.ticket', code=my_reg.pass_code) }}">{{ icon("qr", "ico sm") }}My ticket</a>
+  {% elif my_reg and my_reg.status == 'pending_payment' and my_payment %}<a class="btn brand" href="{{ url_for('events.checkout', receipt=my_payment.receipt_no) }}">Complete payment</a>
+  {% elif my_reg %}<a class="btn ghost" href="{{ url_for('events.ticket', code=my_reg.pass_code) }}">View status</a>
+  {% elif is_open %}<a class="btn brand" href="#register" data-cta-go>{{ "Register" if not e.fee else "Register & pay" }}</a>
+  {% elif parent %}<a class="btn ghost" href="{{ url_for('events.detail', eid=parent.id) }}">See {{ parent.title }}</a>
+  {% else %}<a class="btn ghost" href="#register" data-cta-go>{{ "Join waitlist" if reason == "All seats are taken." else "Details" }}</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if e.fee and is_open and g.user and not my_reg %}
+<script>
+(() => {
+  const btn = document.getElementById("apply-coupon"), input = document.getElementById("coupon"), msg = document.getElementById("coupon-msg");
+  const inr = (v) => "₹" + Math.round(v).toLocaleString("en-IN");
+  btn?.addEventListener("click", async () => {
+    const code = input.value.trim();
+    if (!code) { msg.textContent = "Enter a code first."; return; }
+    try {
+      const r = await EF.api("/api/coupon/{{ e.id }}", { code });
+      msg.textContent = r.message; msg.style.color = r.valid ? "var(--green)" : "var(--rose)";
+      document.getElementById("disc-row").hidden = !r.valid;
+      document.getElementById("disc-val").textContent = "−" + inr(r.discount);
+      document.getElementById("total-val").textContent = r.total === 0 ? "Free" : inr(r.total);
+      if (r.valid) EF.toast(r.message, "success", 2200);
+    } catch (e) { msg.textContent = e.message; }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

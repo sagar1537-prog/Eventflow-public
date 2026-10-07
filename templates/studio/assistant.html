@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, empty with context %}
+{% block title %}Assistant · Studio{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>AI assistant</h1><p>It answers participants from your live event data. Teach it anything it couldn't answer.</p></div>
+    <button class="btn brand" data-ask type="button">{{ icon("sparkles", "ico sm") }}Try it</button></div>
+  {% include "studio/_nav.html" %}
+  <div class="verify-banner ok"><span style="font-size:1.5rem">🤖</span><div>
+    {% if mode == 'llm' %}<b>Running on Claude</b> ({{ model }}). If the API is unreachable it falls back to the built-in engine automatically.
+    {% else %}<b>Running on the built-in engine.</b> It handles timings, venues, fees, seats, slots, tickets and refunds, and searches your FAQs. Set <code>ANTHROPIC_API_KEY</code> to use Claude.{% endif %}
+  </div></div>
+  <div class="kpis"><div class="kpi"><span>Questions asked</span><b>{{ stats.total }}</b></div><div class="kpi"><span>Answered automatically</span><b>{{ stats.rate|pct }}</b></div><div class="kpi"><span>FAQs for your events</span><b>{{ faqs|length }}</b></div></div>
+  <div class="cols-even">
+    <section class="card pad-lg">
+      <h3>Questions it couldn't answer</h3>
+      {% for c in unanswered %}
+      <div class="note"><span class="bar" style="background:var(--brand)"></span><div class="grow"><b>“{{ c.question }}”</b><span class="tiny muted">{{ c.name or "Visitor" }} · {{ c.event_title or "General question" }} · {{ c.created_at|rel }}</span>
+        <details style="margin-top:6px"><summary class="linkish small" style="list-style:none">Answer it</summary>
+          {% if my_events %}
+          <form method="post" action="{{ url_for('studio.faq_add', eid=my_events[0].id) }}" style="margin-top:8px" onsubmit="this.action=this.action.replace(/events\/\d+\//, 'events/' + this.ev.value + '/')">
+            {{ csrf_field() }}<input type="hidden" name="log_id" value="{{ c.id }}"><input type="hidden" name="question" value="{{ c.question }}">
+            <textarea name="answer" required style="min-height:70px" placeholder="Answer once, and everyone who asks gets it."></textarea>
+            <div class="row" style="margin-top:8px"><select name="ev" style="width:auto">{% for e in my_events %}<option value="{{ e.id }}">{{ e.title }}</option>{% endfor %}</select><button class="btn sm brand">Save answer</button></div>
+          </form>
+          {% endif %}
+        </details></div>
+        <form method="post" action="{{ url_for('studio.dismiss', lid=c.id) }}">{{ csrf_field() }}<button class="iconbtn" aria-label="Dismiss">{{ icon("x", "ico sm") }}</button></form></div>
+      {% else %}<p class="muted">Every question so far got an answer. 🎉</p>{% endfor %}
+    </section>
+    <section class="card pad-lg">
+      <h3>What it knows about your events</h3>
+      {% for f in faqs %}<div class="note"><span class="bar"></span><div><b>{{ f.question }}</b><p>{{ f.answer }}</p><span class="tiny muted">{{ f.event_title }}</span></div></div>
+      {% else %}<p class="muted">No FAQs yet. Add them from an event's Updates tab.</p>{% endfor %}
+      <p class="small muted" style="margin-top:12px">It also reads every event's dates, venue, fee, seats, schedule and announcements automatically.</p>
+    </section>
+  </div>
+</div>
+{% endblock %}

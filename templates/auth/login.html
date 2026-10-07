@@ -1,0 +1,50 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Log in{% endblock %}
+{% block art %}
+  <h2>{{ "Run every event from one studio." if portal == 'college' else "Your campus, all its events, one feed." }}</h2>
+  <p>{{ "Post invitations, take payments by UPI, scan tickets at the door and see every number live." if portal == 'college' else "Follow colleges, go with friends, pay in seconds and walk in with a QR ticket." }}</p>
+{% endblock %}
+{% block form %}
+<h1>Welcome back</h1>
+<p class="muted">Log in with your email, username or mobile number.</p>
+<div class="portal-switch {{ 'college' if portal == 'college' }}">
+  <span class="knob"></span>
+  <a class="{{ 'on' if portal != 'college' }}" href="{{ url_for('auth.login', next=request.args.get('next')) }}">Student</a>
+  <a class="{{ 'on' if portal == 'college' }}" href="{{ url_for('auth.login', **{'as': 'college', 'next': request.args.get('next')}) }}">College</a>
+</div>
+<form method="post" autocomplete="on">
+  {{ csrf_field() }}
+  <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+  <div class="field"><label for="identifier">Email, username or mobile</label>
+    <input id="identifier" name="identifier" required autofocus autocomplete="username" placeholder="{{ 'events@yourcollege.edu' if portal == 'college' else 'you@example.com or @username' }}"></div>
+  <div class="field"><div class="row between"><label for="password">Password</label><a class="link small" href="{{ url_for('auth.forgot') }}">Forgot?</a></div>
+    <div class="pw-wrap"><input id="password" name="password" type="password" required autocomplete="current-password">
+      <button class="btn soft sm" type="button" data-pw-toggle data-noload>Show</button></div></div>
+  <label class="check"><input type="checkbox" name="remember" checked> Keep me logged in</label>
+  <button class="btn brand lg block" type="submit">Log in</button>
+</form>
+<p class="center muted" style="margin-top:18px">New here? <a class="link" href="{{ url_for('auth.signup_college' if portal == 'college' else 'auth.signup_student') }}">{{ "Register your college" if portal == 'college' else "Create a student account" }}</a></p>
+
+{% if config.SEED_DEMO %}
+<div class="demo-accounts">
+  <h4>Demo accounts, tap to log in</h4>
+  <div class="demo-grid">
+    <button type="button" data-demo="student@eventflow.app|student123"><span class="av av-sm" style="--h:20">AS</span><span><b>Ananya</b><small>Student</small></span></button>
+    <button type="button" data-demo="events@arunai-demo.edu|college123"><span class="av av-sm" style="--h:225">AE</span><span><b>Arunai Engg.</b><small>College admin</small></span></button>
+    {% if config.SEED_FULL %}<button type="button" data-demo="priya.r|student123"><span class="av av-sm" style="--h:300">PR</span><span><b>Priya</b><small>Event lead (2 events)</small></span></button>
+    {% else %}<button type="button" data-demo="rahul.v|student123"><span class="av av-sm" style="--h:300">RV</span><span><b>Rahul</b><small>Student (Ananya's friend)</small></span></button>{% endif %}
+    <button type="button" data-demo="{{ config.DEV_EMAIL }}|{{ config.DEV_PASSWORD }}"><span class="av av-sm" style="--h:40">{{ config.DEV_NAME|initials }}</span><span><b>{{ config.DEV_NAME }}</b><small>Developer</small></span></button>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll("[data-demo]").forEach(b => b.addEventListener("click", () => {
+  const [u, p] = b.dataset.demo.split("|");
+  document.getElementById("identifier").value = u;
+  document.getElementById("password").value = p;
+  b.closest(".auth-box").querySelector("form").requestSubmit();
+}));
+</script>
+{% endblock %}

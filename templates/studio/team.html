@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, empty with context %}
+{% block title %}Team · Studio{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Team</h1><p>Give students access to specific events only. Leads manage everything for their events; volunteers only scan tickets.</p></div></div>
+  {% include "studio/_nav.html" %}
+  <div class="cols-2">
+    <section>
+      <div class="org">
+        <div class="org-root">{{ avatar(g.user.name, g.user.avatar, "md") }}<div class="grow"><b>{{ g.user.name }}{{ vtick(g.user.verification) }}</b><br><small style="opacity:.7">College admin · every event, payment and setting</small></div><span class="pill brand">Owner</span></div>
+        <div class="org-kids">
+          {% for m in members %}
+          <div class="org-node reveal">
+            <div class="row between nw">
+              <a class="person" href="{{ url_for('social.profile', username=m.user.username) }}">{{ avatar(m.user.name, m.user.avatar, "md") }}<span><b>{{ m.user.name }}</b><small>@{{ m.user.username }}{% if m.user.department %} · {{ m.user.department }}{% endif %}</small></span></a>
+              <form method="post" action="{{ url_for('studio.team_remove', uid=m.user.user_id) }}" data-confirm="Remove {{ m.user.name }} from your team?">{{ csrf_field() }}<button class="btn danger sm">Remove</button></form>
+            </div>
+            <div class="row" style="margin-top:10px;gap:6px">
+              {% for ev in m.events %}<span class="pill {{ 'blue' if ev.role == 'lead' else '' }}">{{ ev.title }} · {{ "Lead" if ev.role == 'lead' else "Volunteer" }}</span>{% endfor %}
+            </div>
+          </div>
+          {% else %}
+          <div class="org-node"><p class="muted mb-0">No team members yet. Add your event coordinators so they can run their own events.</p></div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+    <form class="card pad-lg" method="post">
+      {{ csrf_field() }}
+      <h3>Add a team member</h3>
+      <p class="muted small">They need a student account on EventFlow. They'll see only the events you tick.</p>
+      <div class="field"><label for="username">Their username</label><input id="username" name="username" required placeholder="priya.r" autocomplete="off"></div>
+      <div class="field"><label>Role</label>
+        <div class="seg"><label><input type="radio" name="role" value="lead" checked>Event lead</label><label><input type="radio" name="role" value="volunteer">Check-in volunteer</label></div></div>
+      <label>Events</label>
+      <div class="check-grid" style="margin-bottom:16px">{% for e in my_events %}<label><input type="checkbox" name="event_ids" value="{{ e.id }}"> {{ e.title }}</label>{% else %}<p class="muted small">Create an event first.</p>{% endfor %}</div>
+      <button class="btn brand">{{ icon("plus", "ico sm") }}Add to team</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

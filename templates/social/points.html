@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, empty with context %}
+{% block title %}Rewards{% endblock %}
+{% block content %}
+{% set is_me = True %}
+<div class="page page-enter" style="max-width:980px">
+  <div class="head-row"><div><h1>Rewards</h1><p>Every registration earns points. Spend them as discounts on your next ticket.</p></div></div>
+
+  <section class="rewards-hero">
+    <div class="rh-coin" aria-hidden="true"><div class="coin3d"><span class="face f">★</span><span class="face b">EF</span></div></div>
+    <div class="rh-main">
+      <small>Your balance</small>
+      <div class="rh-balance"><b data-count="{{ pts.balance }}">{{ pts.balance }}</b><span>points</span></div>
+      <p class="rh-worth">Worth {{ pts.balance|inr }} off · up to {{ rules.pct }}% of any ticket</p>
+      <div class="rh-level">
+        <span class="lv">{{ pts.level_emoji }} {{ pts.level }}</span>
+        <span class="meter"><i style="width: {{ pts.progress }}%"></i></span>
+        <span class="small">{% if pts.next %}{{ pts.to_next }} pts to {{ pts.next[2] }} {{ pts.next[1] }}{% else %}Top level reached 👑{% endif %}</span>
+      </div>
+    </div>
+    <div class="rh-stats">
+      <div><b>{{ pts.earned }}</b><span>earned</span></div>
+      <div><b>{{ pts.spent }}</b><span>redeemed</span></div>
+      <div><b>#{{ my_rank }}</b><span>rank</span></div>
+    </div>
+  </section>
+
+  <div class="earn-grid">
+    <div class="earn reveal"><span class="e">🎟️</span><b>+{{ rules.paid }}</b><small>per paid registration</small></div>
+    <div class="earn reveal"><span class="e">🆓</span><b>+{{ rules.free }}</b><small>per free registration</small></div>
+    <div class="earn reveal"><span class="e">✅</span><b>+{{ rules.attend }}</b><small>when you check in</small></div>
+    <div class="earn reveal"><span class="e">🏆</span><b>+{{ rules.win[1] }}</b><small>for winning ({{ rules.win[2] }} / {{ rules.win[3] }} for 2nd / 3rd)</small></div>
+  </div>
+
+  <div class="cols-2" style="margin-top:22px">
+    <section class="card pad-lg">
+      <div class="card-head"><h3>History</h3></div>
+      {% for h in history %}
+      <div class="ph-row"><span class="e">{{ h.icon }}</span><span class="grow"><b>{{ h.text }}</b><small class="muted">{{ h.at|rel }}</small></span>
+        <span class="delta {{ 'neg' if h.delta < 0 }}">{{ '+' if h.delta > 0 }}{{ h.delta }}</span></div>
+      {% else %}
+      <div class="empty-mini"><span style="font-size:2.2rem">✨</span><p class="muted">Register for an event to earn your first points.</p><a class="btn brand sm" href="{{ url_for('social.explore') }}">Find events</a></div>
+      {% endfor %}
+    </section>
+    <section class="card pad-lg">
+      <div class="card-head"><h3>Leaderboard</h3><span class="muted small">All students</span></div>
+      {% for b in board %}
+      <a class="lb-row {{ 'me' if b.id == g.user.id }}" href="{{ url_for('social.profile', username=b.username) }}">
+        <span class="rank r{{ loop.index }}">{{ loop.index }}</span>{{ avatar(b.name, b.avatar, "sm") }}
+        <span class="grow"><b>{{ b.name }}</b><small class="muted">{{ b.college_name or "@" ~ b.username }}</small></span><span class="pts">{{ b.pts }}</span></a>
+      {% else %}
+      <div class="empty-mini"><span style="font-size:2.2rem">🏁</span><p class="muted">No one has points yet. Be the first!</p></div>
+      {% endfor %}
+    </section>
+  </div>
+
+  <section style="margin-top:26px">
+    <div class="card-head"><h2>Certifications</h2><a class="link small" href="{{ url_for('social.profile', username=g.user.username, tab='certs') }}">On your profile</a></div>
+    {% if certs %}{% include "partials/cert_grid.html" %}
+    {% else %}{{ empty("📜", "No certificates yet", "Check in at an event (or win one) and your certificate lands here automatically.") }}{% endif %}
+  </section>
+</div>
+{% endblock %}

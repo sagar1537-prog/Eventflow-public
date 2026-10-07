@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick with context %}
+{% block title %}New post{% endblock %}
+{% block content %}
+<div class="page narrow page-enter">
+  <div class="head-row"><div><h1>Create a post</h1><p>Share an invitation, poster, teaser video or rulebook with your followers.</p></div></div>
+  <form class="card pad-lg" method="post" enctype="multipart/form-data">
+    {{ csrf_field() }}
+    <div class="row nw" style="margin-bottom:16px">{{ avatar(g.user.name, g.user.avatar, "md") }}<b>{{ g.user.name }}{{ vtick(g.user.verification) }}</b></div>
+    <div class="field">
+      <label class="dropzone" data-dropzone="#previews">
+        <input type="file" name="media" multiple accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.txt,.csv">
+        <span style="font-size:2rem;display:block">🖼️ 🎬 📄</span>
+        <b>Drop photos, videos or files here</b><br><span class="muted small">or click to browse · up to 10 files, 40 MB each · photos and videos form a swipeable carousel</span>
+      </label>
+      <div class="previews" id="previews"></div>
+    </div>
+    <div class="field"><label for="caption">Caption</label>
+      <textarea id="caption" name="caption" maxlength="2200" data-maxlen="#cap-count" placeholder="Tell people what's happening. Use #tags and @mentions.">{{ form.get('caption', '') }}</textarea>
+      <span class="hint" id="cap-count" style="float:right"></span></div>
+    <div class="field"><label for="event_id">Link an event <span class="hint">(adds a Register button under the post)</span></label>
+      <select id="event_id" name="event_id"><option value="">No event</option>
+        {% for e in my_events %}<option value="{{ e.id }}" {{ 'selected' if form.get('event_id')|string == e.id|string }}>{{ e.title }}</option>{% endfor %}</select></div>
+    <div class="row between"><a class="btn ghost" href="{{ url_for('social.profile', username=g.user.username) }}">Cancel</a><button class="btn brand lg" type="submit">{{ icon("send", "ico sm") }}Share post</button></div>
+  </form>
+</div>
+{% endblock %}

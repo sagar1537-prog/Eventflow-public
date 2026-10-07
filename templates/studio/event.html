@@ -1,0 +1,374 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, status_pill, reg_pill, empty with context %}
+{% block title %}{{ e.title }} · Studio{% endblock %}
+{% block content %}
+{% set lead = role in ('owner', 'dev', 'lead') %}
+<div class="page wide page-enter">
+  {% if parent %}<a class="fest-parent" href="{{ url_for('studio.event', eid=parent.id) }}"><span class="e">🎪</span>{{ parent.title }}{% if track %} · {{ track.name }}{% endif %}{{ icon("right", "ico sm") }}</a>{% endif %}
+  <div class="head-row">
+    <div class="row nw" style="gap:16px">
+      <span class="av av-xl sq" style="--h:{{ e.title|hue }};border-radius:20px">{% if e.banner %}<img src="{{ url_for('media', rel=e.banner) }}" alt="">{% else %}{{ e.category|cat_emoji }}{% endif %}</span>
+      <div><h1>{{ e.title }}</h1>
+        <p class="row" style="gap:8px">{{ status_pill(e.status) }}<span>{{ e.start_dt|dt }} · {{ e.venue }}</span>{% if role == 'lead' %}<span class="pill blue">You're an event lead</span>{% endif %}</p></div>
+    </div>
+    <div class="row">
+      <a class="btn brand" href="{{ url_for('studio.checkin', eid=e.id) }}">{{ icon("scan", "ico sm") }}Check-in scanner</a>
+      <a class="btn ghost" href="{{ url_for('events.detail', eid=e.id) }}">{{ icon("eye", "ico sm") }}View page</a>
+      {% if lead %}<a class="btn ghost" href="{{ url_for('studio.event_edit', eid=e.id) }}">{{ icon("edit", "ico sm") }}Edit</a>
+      <a class="btn ghost icon" href="{{ url_for('studio.export', eid=e.id) }}" title="Export CSV" aria-label="Export CSV">{{ icon("download", "ico sm") }}</a>{% endif %}
+      {% if g.user.role == 'college' %}<a class="btn ghost" href="{{ url_for('social.post_new', event=e.id) }}">{{ icon("image", "ico sm") }}Post</a>{% endif %}
+    </div>
+  </div>
+  {% include "studio/_nav.html" %}
+
+  <div class="kpis">
+    <div class="kpi"><span>Confirmed</span><b><span data-count="{{ stats.registered }}">{{ stats.registered }}</span><small style="font-size:1rem"> / {{ e.capacity }}</small></b><small>{{ (stats.registered / e.capacity * 100)|round|int }}% of seats</small></div>
+    <div class="kpi"><span>Checked in</span><b data-count="{{ stats.attended }}">{{ stats.attended }}</b><small>{{ stats.attendance_rate|pct }} of confirmed</small></div>
+    <div class="kpi {{ 'hl' if stats.review }}"><span>Payments to verify</span><b>{{ stats.review }}</b><small>{{ stats.cancelled }} cancelled</small></div>
+    <div class="kpi dark"><span>Collected</span><b data-count="{{ stats.revenue }}" data-prefix="₹">{{ stats.revenue|inr }}</b><small>{{ (stats.revenue - stats.fees)|inr }} net</small></div>
+    <div class="kpi"><span>Food estimate</span><b>{{ food.total|inr }}</b><small>{{ food.plates }} plates</small></div>
+  </div>
+
+  <nav class="tabs" data-panes>
+    <a href="#registrations">Registrations <span class="n">{{ regs|length }}</span></a>
+    <a href="#payments">Payments {% if stats.review %}<span class="n" style="background:var(--rose);color:#fff">{{ stats.review }}</span>{% endif %}</a>
+    <a href="#slots">Slots</a>
+    <a href="#schedule">Schedule</a>
+    <a href="#food">Food</a>
+    <a href="#coupons">Coupons</a>
+    <a href="#updates">Updates & FAQ</a>
+    <a href="#winners">🏆 Winners{% if winners %} <span class="n">{{ winners|length }}</span>{% endif %}</a>
+    <a href="#stats">Stats</a>
+  </nav>
+
+  <!-- registrations -->
+  <section class="tab-pane" id="registrations">
+    <div class="row between" style="margin-bottom:12px">
+      <input type="search" id="reg-q" placeholder="Search name, college, team or ticket code" style="max-width:360px">
+      <span class="muted small">Team: {% for s in staff %}@{{ s.username }} ({{ s.role }}){{ ", " if not loop.last }}{% else %}just you{% endfor %}</span>
+    </div>
+    {% if regs %}
+    <div class="table-wrap">
+      <table class="data" id="reg-table">
+        <thead><tr><th>Participant</th><th>Team</th><th>Food</th><th>Status</th><th>Slot</th><th>Present</th><th></th></tr></thead>
+        <tbody>
+        {% for r in regs %}
+          <tr class="{{ 'muted-row' if r.status == 'cancelled' }}" data-q="{{ (r.name ~ ' ' ~ r.username ~ ' ' ~ (r.college_name or '') ~ ' ' ~ (r.team_name or '') ~ ' ' ~ r.pass_code)|lower }}">
+            <td><a class="person" href="{{ url_for('social.profile', username=r.username) }}">{{ avatar(r.name, r.avatar, "sm") }}<span><b>{{ r.name }}</b><small>{{ r.college_name or '' }}{% if r.department %} · {{ r.department }}{% endif %}</small></span></a></td>
+            <td>{{ r.team_name or "—" }}</td>
+            <td>{{ {"veg": "🥗", "nonveg": "🍗", "none": "—"}[r.food_pref] }}</td>
+            <td>{{ reg_pill(r.status, r.pay_status) }}</td>
+            <td>
+              {% if r.status == 'confirmed' and lead %}
+              <details><summary style="cursor:pointer;list-style:none">{% if r.slot_start %}<b>{{ r.slot_start|time }}</b> <span class="muted small">{{ r.slot_venue }}</span>{% else %}<span class="muted small">Set slot</span>{% endif %}</summary>
+                <form method="post" action="{{ url_for('studio.slot', rid=r.id) }}" style="display:grid;gap:6px;margin-top:8px;min-width:220px">{{ csrf_field() }}
+                  <input type="datetime-local" name="slot_start" value="{{ (r.slot_start or '')[:16] }}" aria-label="Slot start">
+                  <input type="datetime-local" name="slot_end" value="{{ (r.slot_end or '')[:16] }}" aria-label="Slot end">
+                  <input name="slot_venue" value="{{ r.slot_venue or '' }}" placeholder="Room" aria-label="Room"><button class="btn sm">Save & notify</button></form></details>
+              {% elif r.slot_start %}{{ r.slot_start|time }} · {{ r.slot_venue }}{% else %}—{% endif %}
+            </td>
+            <td>{% if r.status == 'confirmed' %}<form method="post" action="{{ url_for('studio.attendance', rid=r.id) }}">{{ csrf_field() }}
+              <button class="tick {{ 'on' if r.attended }}" title="{{ 'Checked in ' ~ (r.checkin_time|time) if r.attended else 'Mark present' }}" aria-label="Toggle attendance for {{ r.name }}" data-noload>✓</button></form>{% endif %}</td>
+            <td>{% if lead and r.status in ('confirmed', 'cancelled') %}<form method="post" action="{{ url_for('studio.reg_status', rid=r.id) }}" {% if r.status == 'confirmed' %}data-confirm="Cancel {{ r.name }}'s registration?{% if r.amount %} Their payment will be marked for refund.{% endif %}"{% endif %}>
+              {{ csrf_field() }}<button class="btn sm {{ 'danger' if r.status == 'confirmed' else 'ghost' }}">{{ "Cancel" if r.status == 'confirmed' else "Restore" }}</button></form>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}{{ empty("📭", "No registrations yet", "Share a post about this event to get sign-ups.", url_for('social.post_new', event=e.id) if g.user.role == 'college' else None, "Create a post") }}{% endif %}
+  </section>
+
+  <!-- payments -->
+  <section class="tab-pane" id="payments">
+    <p class="muted-2">Open your UPI app, find the payment with this UTR and amount, then approve it. Approved tickets activate instantly.</p>
+    {% if payments %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Participant</th><th class="r">Amount</th><th>Method</th><th>UTR</th><th>Proof</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        {% for p in payments %}
+          <tr>
+            <td class="person"><span><b>{{ p.name }}</b><small>@{{ p.username }}{% if p.phone %} · {{ p.phone }}{% endif %} · {{ p.created_at|rel }}</small></span></td>
+            <td class="r"><b>{{ p.amount|inr }}</b>{% if p.discount %}<br><small class="muted">−{{ p.discount|inr }} coupon</small>{% endif %}{% if p.points_used %}<br><small class="muted">−{{ p.points_used|inr }} points</small>{% endif %}</td>
+            <td>{{ {"upi": "UPI", "demo": "Demo", "free": "Free"}[p.method] }}</td>
+            <td class="num">{{ p.utr or "—" }}</td>
+            <td>{% if p.screenshot %}<a class="link small" href="{{ url_for('media', rel=p.screenshot) }}" target="_blank" rel="noopener">Screenshot</a>{% else %}—{% endif %}</td>
+            <td>{% if p.status == 'submitted' %}<span class="pill amber">To verify</span>{% elif p.status == 'paid' %}<span class="pill green">Paid</span>{% elif p.status == 'refunded' %}<span class="pill blue">Refund due</span>{% elif p.status == 'rejected' %}<span class="pill rose">Rejected</span>{% else %}<span class="pill">Not paid</span>{% endif %}
+              {% if p.note %}<br><small class="muted">{{ p.note }}</small>{% endif %}</td>
+            <td class="nowrap">
+              {% if p.status == 'submitted' and lead %}
+                <form method="post" action="{{ url_for('studio.payment_action', pid=p.id, action='approve') }}" style="display:inline">{{ csrf_field() }}<button class="btn success sm">Approve</button></form>
+                <form method="post" action="{{ url_for('studio.payment_action', pid=p.id, action='reject') }}" style="display:inline" data-confirm="Reject this payment? The participant will be asked to resubmit.">{{ csrf_field() }}<button class="btn danger sm">Reject</button></form>
+              {% elif p.status == 'refunded' and lead and not (p.note or '').startswith('Refund sent') %}
+                <form method="post" action="{{ url_for('studio.payment_action', pid=p.id, action='refunded') }}">{{ csrf_field() }}<button class="btn ghost sm">Mark refund sent</button></form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}{{ empty("💳", "No payments yet", "Payments for paid tickets show up here." if e.fee else "This is a free event, so there's nothing to collect.") }}{% endif %}
+  </section>
+
+  <!-- slots -->
+  <section class="tab-pane" id="slots">
+    <div class="cols-2">
+      <form class="card pad-lg" method="post" action="{{ url_for('studio.slots', eid=e.id) }}">
+        {{ csrf_field() }}
+        <h3>Give everyone a personal time and room</h3>
+        <p class="muted-2 small">Participants are spread across the rooms you list. Teams stay together. Each person is notified with their own slot.</p>
+        <div class="grid-3">
+          <div class="field"><label for="slot_start">First slot</label><input id="slot_start" name="slot_start" type="datetime-local" value="{{ default_start }}" required></div>
+          <div class="field"><label for="duration">Minutes each</label><input id="duration" name="duration" type="number" min="1" value="10"></div>
+          <div class="field"><label for="gap">Gap (min)</label><input id="gap" name="gap" type="number" min="0" value="5"></div>
+        </div>
+        <div class="field"><label for="rooms">Rooms <span class="hint">comma separated</span></label><input id="rooms" name="rooms" value="{{ rooms|map(attribute='slot_venue')|join(', ') if rooms else e.venue }}"></div>
+        <label class="check"><input type="checkbox" name="announce" checked> Post a pinned slot announcement too</label>
+        <p class="small muted" id="slot-preview"></p>
+        <button class="btn brand" {{ 'disabled' if not stats.registered or not lead }}>Assign slots and notify</button>
+      </form>
+      <section class="card pad-lg">
+        <h3>Rooms in use</h3>
+        {% if rooms %}
+        <table class="data"><thead><tr><th>Room</th><th class="r">People</th><th>From</th><th>To</th></tr></thead>
+          <tbody>{% for r in rooms %}<tr><td><b>{{ r.slot_venue }}</b></td><td class="r">{{ r.c }}</td><td>{{ r.first|time }}</td><td>{{ r.last|time }}</td></tr>{% endfor %}</tbody></table>
+        {% else %}<p class="muted">No slots yet.</p>{% endif %}
+      </section>
+    </div>
+  </section>
+
+  <!-- schedule -->
+  <section class="tab-pane" id="schedule">
+    <div class="cols-2">
+      <section class="card pad-lg">
+        <h3>Public schedule</h3>
+        {% if schedule %}
+        <ol class="timeline">
+          {% for s in schedule %}<li><span class="t">{{ s.start_dt|time }}<small>{{ s.start_dt|dt("%d %b") }}</small></span><span class="d"></span>
+            <span class="w row between nw"><span><b>{{ s.title }}</b><span>{{ s.venue or e.venue }}</span></span>
+              {% if lead %}<form method="post" action="{{ url_for('studio.schedule_delete', sid=s.id) }}">{{ csrf_field() }}<button class="iconbtn" aria-label="Remove {{ s.title }}">{{ icon("trash", "ico sm") }}</button></form>{% endif %}</span></li>{% endfor %}
+        </ol>
+        {% else %}<p class="muted">Add sessions so people know what happens when.</p>{% endif %}
+      </section>
+      {% if lead %}
+      <form class="card pad-lg" method="post" action="{{ url_for('studio.schedule_add', eid=e.id) }}">
+        {{ csrf_field() }}<h3>Add a session</h3>
+        <div class="field"><label for="s-title">Session</label><input id="s-title" name="title" required placeholder="Lunch"></div>
+        <div class="grid-2"><div class="field"><label for="s-start">Starts</label><input id="s-start" name="start_dt" type="datetime-local" value="{{ default_start }}" required></div>
+          <div class="field"><label for="s-end">Ends</label><input id="s-end" name="end_dt" type="datetime-local"></div></div>
+        <div class="field"><label for="s-venue">Venue</label><input id="s-venue" name="venue" placeholder="{{ e.venue }}"></div>
+        <button class="btn brand">Add session</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- food -->
+  <section class="tab-pane" id="food">
+    <div class="cols-2">
+      <form class="card pad-lg" method="post" action="{{ url_for('studio.food', eid=e.id) }}">
+        {{ csrf_field() }}
+        <h3>Food budget</h3>
+        <p class="muted-2 small">Uses each participant's food choice and a predicted turnout{% if food.learned %} learned from your past events{% endif %}.</p>
+        <div class="grid-3">
+          <div class="field"><label for="f-cost">₹ per plate</label><input id="f-cost" name="food_cost_per_head" type="number" min="0" value="{{ food.cost|int }}"></div>
+          <div class="field"><label for="f-meals">Meals</label><input id="f-meals" name="meals_count" type="number" min="0" value="{{ food.meals }}"></div>
+          <div class="field"><label for="f-buf">Buffer %</label><input id="f-buf" name="food_buffer_pct" type="number" min="0" value="{{ food.buffer_pct|int }}"></div>
+        </div>
+        <div class="field"><label for="f-rate">Expected turnout <b id="f-rate-out">{{ (food.rate * 100)|round|int }}%</b> <span class="hint">{{ "event finished, actual attendance used" if e.status == 'completed' else "slide to try scenarios" }}</span></label>
+          <input id="f-rate" type="range" min="40" max="100" value="{{ (food.rate * 100)|round|int }}" {{ 'disabled' if e.status == 'completed' }}></div>
+        <button class="btn brand" {{ 'disabled' if not lead }}>Save food plan</button>
+      </form>
+      <div class="food-card" aria-live="polite">
+        <small style="opacity:.7">Estimated food cost</small>
+        <div class="amt" id="f-total">{{ food.total|inr }}</div>
+        <small id="f-basis" style="opacity:.7">Based on {{ food.basis }}</small>
+        <div class="split"><i id="f-vb" style="background:#3DD68C;width:{{ (food.veg / food.diners * 100) if food.diners else 0 }}%"></i><i style="background:var(--brand);flex:1"></i></div>
+        <div class="legend" style="color:inherit;opacity:.85"><span><i style="--c:#3DD68C"></i><b id="f-veg">{{ food.veg }}</b>&nbsp;veg</span><span><i style="--c:var(--brand)"></i><b id="f-nv">{{ food.nonveg }}</b>&nbsp;non-veg</span></div>
+        <div class="lines">
+          <div><span>Confirmed</span><b>{{ stats.registered }}</b></div>
+          <div><span>Skipping meals</span><b>{{ stats.nofood }}</b></div>
+          <div><span>Expected diners</span><b id="f-diners">{{ food.diners }}</b></div>
+          <div><span>Plates to order</span><b id="f-plates">{{ food.plates }}</b></div>
+          <div><span>Base</span><b id="f-base">{{ food.base|inr }}</b></div>
+          <div><span>Buffer</span><b id="f-buffer">{{ food.buffer|inr }}</b></div>
+          <div><span>If everyone shows up</span><b id="f-worst">{{ food.worst|inr }}</b></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- coupons -->
+  <section class="tab-pane" id="coupons">
+    <div class="cols-2">
+      <section class="card pad-lg">
+        <h3>Discount codes</h3>
+        {% if coupons %}
+        <table class="data"><thead><tr><th>Code</th><th class="r">Off</th><th class="r">Used</th><th>Status</th><th></th></tr></thead>
+          <tbody>{% for c in coupons %}<tr><td><b class="num">{{ c.code }}</b> <button class="linkish tiny" data-copy="{{ c.code }}" type="button">Copy</button></td><td class="r">{{ c.percent_off }}%</td><td class="r">{{ c.used_now }}/{{ c.max_uses }}</td>
+            <td>{% if c.active %}<span class="pill green">Active</span>{% else %}<span class="pill">Paused</span>{% endif %}</td>
+            <td>{% if lead %}<form method="post" action="{{ url_for('studio.coupon_toggle', cid=c.id) }}">{{ csrf_field() }}<button class="btn ghost sm">{{ "Pause" if c.active else "Resume" }}</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>
+        {% else %}<p class="muted">{{ "No codes yet. Early-bird and group codes help fill seats." if e.fee else "This event is free, so codes aren't needed." }}</p>{% endif %}
+      </section>
+      {% if lead and e.fee %}
+      <form class="card pad-lg" method="post" action="{{ url_for('studio.coupon_add', eid=e.id) }}">
+        {{ csrf_field() }}<h3>New code</h3>
+        <div class="field"><label for="c-code">Code</label><input id="c-code" name="code" required maxlength="20" placeholder="EARLYBIRD" style="text-transform:uppercase"></div>
+        <div class="grid-2"><div class="field"><label for="c-pct">Discount %</label><input id="c-pct" name="percent_off" type="number" min="1" max="100" value="20"></div>
+          <div class="field"><label for="c-max">Max uses</label><input id="c-max" name="max_uses" type="number" min="1" value="50"></div></div>
+        <button class="btn brand">Create code</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- updates -->
+  <section class="tab-pane" id="updates">
+    <div class="cols-2">
+      <div class="stack-lg">
+        {% if lead %}
+        <form class="card pad-lg" method="post" action="{{ url_for('studio.announce', eid=e.id) }}" id="ann-form">
+          {{ csrf_field() }}<h3>Send an update</h3>
+          <p class="muted small">Goes to the event page and notifies every registered participant.</p>
+          <div class="field"><label for="a-title">Headline</label><input id="a-title" name="title" required maxlength="120" placeholder="Venue changed to Seminar Hall 1"></div>
+          <div class="field"><div class="row between"><label for="a-body" style="margin:0">Message</label><button class="btn soft sm" type="button" id="draft-btn" data-noload>{{ icon("sparkles", "ico sm") }}Polish with AI</button></div>
+            <textarea id="a-body" name="body" required style="margin-top:6px" placeholder="Rough notes are fine. AI can tidy them up."></textarea><small class="hint" id="draft-msg"></small></div>
+          <label class="check"><input type="checkbox" name="important"> Mark as important</label>
+          <label class="check"><input type="checkbox" name="kind" value="slot"> This is a slot announcement</label>
+          <button class="btn brand">{{ icon("megaphone", "ico sm") }}Publish update</button>
+        </form>
+        {% endif %}
+        <section class="card pad-lg">
+          <h3>Published</h3>
+          {% for a in news %}
+          <div class="note {{ 'important' if a.priority == 'important' }} {{ 'slot' if a.kind == 'slot' }}"><span class="bar"></span><div class="grow"><b>{{ a.title }}</b><p>{{ a.body }}</p>
+            <span class="tiny muted">{{ a.created_at|rel }}{% if a.author %} · {{ a.author }}{% endif %}</span></div>
+            {% if lead %}<form method="post" action="{{ url_for('studio.announce_delete', aid=a.id) }}" data-confirm="Delete this update?">{{ csrf_field() }}<button class="iconbtn" aria-label="Delete">{{ icon("trash", "ico sm") }}</button></form>{% endif %}</div>
+          {% else %}<p class="muted">No updates yet.</p>{% endfor %}
+        </section>
+      </div>
+      <div class="stack-lg">
+        <section class="card pad-lg">
+          <h3>FAQ</h3>
+          <p class="muted small">The AI assistant answers these for everyone.</p>
+          {% for f in faqs %}<div class="note"><span class="bar"></span><div class="grow"><b>{{ f.question }}</b><p>{{ f.answer }}</p></div>
+            {% if lead %}<form method="post" action="{{ url_for('studio.faq_delete', fid=f.id) }}">{{ csrf_field() }}<button class="iconbtn" aria-label="Delete">{{ icon("trash", "ico sm") }}</button></form>{% endif %}</div>
+          {% else %}<p class="muted">No questions yet.</p>{% endfor %}
+        </section>
+        {% if lead %}
+        <form class="card pad-lg" method="post" action="{{ url_for('studio.faq_add', eid=e.id) }}">
+          {{ csrf_field() }}<h3>Add a question</h3>
+          <div class="field"><label for="fq">Question</label><input id="fq" name="question" required></div>
+          <div class="field"><label for="fa">Answer</label><textarea id="fa" name="answer" required style="min-height:80px"></textarea></div>
+          <button class="btn brand">Save</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <!-- winners -->
+  <section class="tab-pane" id="winners">
+    <div class="cols-2">
+      <div class="stack-lg">
+        {% if lead %}
+        <form class="card pad-lg" method="post" action="{{ url_for('studio.winner_add', eid=e.id) }}">
+          {{ csrf_field() }}<h3>Set a winner</h3>
+          <p class="muted small">Winners get bonus points, a badge on their profile and a certificate of achievement.</p>
+          <div class="field"><label>Position</label>
+            <div class="seg win-seg">{% for pos in [1, 2, 3, 0] %}<label><input type="radio" name="position" value="{{ pos }}" {{ 'checked' if loop.first }} data-title="{{ win_titles[pos] }}">{{ {1: "🥇 1st", 2: "🥈 2nd", 3: "🥉 3rd", 0: "🏅 Special"}[pos] }}</label>{% endfor %}</div>
+            <small class="hint">+{{ win_points[1] }} / +{{ win_points[2] }} / +{{ win_points[3] }} / +{{ win_points[0] }} points</small></div>
+          <div class="field"><label for="w-title">Title <span class="hint">(optional)</span></label><input id="w-title" name="title" maxlength="60" placeholder="Winner"></div>
+          <div class="field"><label for="w-who">Award to</label>
+            <select id="w-who" name="who" required>
+              <option value="">Choose a team or participant…</option>
+              {% if teams %}<optgroup label="Teams (every member)">{% for t in teams %}<option value="t:{{ t }}">Team {{ t }}</option>{% endfor %}</optgroup>{% endif %}
+              <optgroup label="Participants">{% for r in regs if r.status == 'confirmed' %}<option value="r:{{ r.id }}">{{ r.name }}{% if r.team_name %} · {{ r.team_name }}{% endif %}{% if r.attended %} ✓{% endif %}</option>{% endfor %}</optgroup>
+            </select></div>
+          {% if not regs|selectattr('status', 'equalto', 'confirmed')|list %}<p class="small muted">No confirmed participants yet.</p>{% endif %}
+          <button class="btn brand">{{ icon("trophy", "ico sm") }}Save winner</button>
+        </form>
+        {% endif %}
+      </div>
+      <section class="card pad-lg">
+        <div class="card-head"><h3>Podium</h3>
+          {% if lead and winners %}<form method="post" action="{{ url_for('studio.winners_announce', eid=e.id) }}" data-confirm="Publish the winners on the event page and notify every participant?">{{ csrf_field() }}<button class="btn ghost sm">{{ icon("megaphone", "ico sm") }}Announce</button></form>{% endif %}</div>
+        {% for w in winners %}
+        <div class="win-row">
+          <span class="medal m{{ w.position }}">{{ {1: "🥇", 2: "🥈", 3: "🥉"}.get(w.position, "🏅") }}</span>
+          {{ avatar(w.name, w.avatar, "sm") }}
+          <span class="grow"><b>{{ w.name }}</b><small class="muted">{{ w.title }}{% if w.team_name %} · Team {{ w.team_name }}{% endif %} · +{{ w.points }} pts</small></span>
+          {% if lead %}<form method="post" action="{{ url_for('studio.winner_delete', wid=w.id) }}" data-confirm="Remove {{ w.name }} from the winners?">{{ csrf_field() }}<button class="iconbtn" aria-label="Remove">{{ icon("trash", "ico sm") }}</button></form>{% endif %}
+        </div>
+        {% else %}
+        <div class="empty-mini"><span style="font-size:2.4rem">🏆</span><p class="muted">No winners yet. Results go here once the event wraps up.</p></div>
+        {% endfor %}
+      </section>
+    </div>
+  </section>
+
+  <!-- stats -->
+  <section class="tab-pane" id="stats">
+    <div class="cols-even">
+      <section class="card pad-lg"><h3>By college</h3>
+        {% set top = (stats.colleges|map(attribute='c')|max) if stats.colleges else 1 %}
+        <div class="bars">{% for d in stats.colleges %}<div class="r"><span class="ellipsis">{{ d.label }}</span><span class="t"><i style="width:{{ (d.c / top * 100)|round }}%"></i></span><span class="v">{{ d.c }}</span></div>{% else %}<p class="muted">No data yet.</p>{% endfor %}</div></section>
+      <section class="card pad-lg"><h3>By department</h3>
+        {% set topd = (stats.dept|map(attribute='c')|max) if stats.dept else 1 %}
+        <div class="bars">{% for d in stats.dept %}<div class="r"><span class="ellipsis">{{ d.label }}</span><span class="t"><i style="width:{{ (d.c / topd * 100)|round }}%;background:#8B5CF6"></i></span><span class="v">{{ d.c }}</span></div>{% else %}<p class="muted">No data yet.</p>{% endfor %}</div></section>
+      <section class="card pad-lg"><h3>Food choices</h3>
+        {% set topf = [stats.veg, stats.nonveg, stats.nofood, 1]|max %}
+        <div class="bars">{% for l, v in [("Veg", stats.veg), ("Non-veg", stats.nonveg), ("No meal", stats.nofood)] %}<div class="r"><span>{{ l }}</span><span class="t"><i style="width:{{ (v / topf * 100)|round }}%;background:#10A37F"></i></span><span class="v">{{ v }}</span></div>{% endfor %}</div></section>
+      <section class="card pad-lg"><h3>Page views</h3><div class="big-n">{{ e.views|compact }}</div>
+        <p class="muted small">{{ ((stats.registered / e.views * 100) if e.views else 0)|round(1) }}% of viewers registered</p></section>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  document.querySelectorAll(".win-seg input").forEach((i) => i.addEventListener("change", () => { const t = $("w-title"); if (t) t.placeholder = i.dataset.title; }));
+  $("reg-q")?.addEventListener("input", (ev) => {
+    const v = ev.target.value.trim().toLowerCase();
+    document.querySelectorAll("#reg-table tbody tr").forEach((tr) => { tr.hidden = v && !tr.dataset.q.includes(v); });
+  });
+  const n = {{ stats.registered }};
+  const slotPreview = () => {
+    const rooms = ($("rooms").value.split(",").filter((x) => x.trim()).length) || 1, dur = +$("duration").value || 10, gap = +$("gap").value || 0;
+    const start = new Date($("slot_start").value), rounds = Math.ceil(n / rooms);
+    const end = new Date(start.getTime() + ((rounds - 1) * (dur + gap) + dur) * 60000);
+    $("slot-preview").textContent = n ? `${n} people across ${rooms} room${rooms > 1 ? "s" : ""}: ${rounds} rounds, done by about ${isNaN(end) ? "—" : end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.` : "No confirmed participants yet.";
+  };
+  ["rooms", "duration", "gap", "slot_start"].forEach((id) => $(id)?.addEventListener("input", slotPreview));
+  if ($("slot-preview")) slotPreview();
+
+  const F = {{ {"reg": stats.registered, "nofood": stats.nofood, "veg": stats.veg, "nonveg": stats.nonveg, "att": stats.attended, "done": e.status == 'completed'}|tojson }};
+  const inr = (v) => "₹" + Math.round(v).toLocaleString("en-IN");
+  const food = () => {
+    const cost = +$("f-cost").value || 0, meals = +$("f-meals").value || 0, buf = +$("f-buf").value || 0, rate = +$("f-rate").value / 100;
+    $("f-rate-out").textContent = Math.round(rate * 100) + "%";
+    const heads = F.done ? F.att : Math.ceil(F.reg * rate), eat = F.reg ? (F.reg - F.nofood) / F.reg : 1, diners = Math.ceil(heads * eat);
+    const vs = (F.veg + F.nonveg) ? F.veg / (F.veg + F.nonveg) : 1, veg = Math.round(diners * vs), plates = diners * meals, base = plates * cost;
+    $("f-total").textContent = inr(base * (1 + buf / 100)); $("f-basis").textContent = F.done ? "Based on actual attendance" : `Based on ${Math.round(rate * 100)}% turnout`;
+    $("f-diners").textContent = diners; $("f-plates").textContent = plates; $("f-base").textContent = inr(base); $("f-buffer").textContent = inr(base * buf / 100);
+    $("f-worst").textContent = inr(F.reg * eat * meals * cost * (1 + buf / 100)); $("f-veg").textContent = veg; $("f-nv").textContent = diners - veg;
+    $("f-vb").style.width = (diners ? veg / diners * 100 : 0) + "%";
+  };
+  ["f-cost", "f-meals", "f-buf", "f-rate"].forEach((id) => $(id)?.addEventListener("input", food));
+
+  $("draft-btn")?.addEventListener("click", async () => {
+    const title = $("a-title").value, body = $("a-body"), msg = $("draft-msg");
+    if (!title && !body.value) { msg.textContent = "Write a headline or a few notes first."; return; }
+    msg.textContent = "Drafting…";
+    try {
+      const r = await EF.api("{{ url_for('studio.api_draft') }}", { title, notes: body.value, event_id: {{ e.id }} });
+      body.value = r.body; msg.textContent = r.source === "llm" ? "Drafted by Claude. Check it before publishing." : "Drafted from a template. Add an API key for AI-written drafts.";
+    } catch (err) { msg.textContent = err.message; }
+  });
+})();
+</script>
+{% endblock %}

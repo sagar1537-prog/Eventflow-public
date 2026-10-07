@@ -1,0 +1,218 @@
+{% macro icon(name, cls="ico") -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" aria-hidden="true">
+{%- if name == "home" -%}<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>
+{%- elif name == "compass" -%}<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/>
+{%- elif name == "ticket" -%}<path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/><path d="M14 6v12" stroke-dasharray="2 2.5"/>
+{%- elif name == "chat" -%}<path d="M21 12a8.5 8.5 0 0 1-12.4 7.6L3 21l1.5-5.2A8.5 8.5 0 1 1 21 12z"/>
+{%- elif name == "bell" -%}<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>
+{%- elif name == "users" -%}<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.6 6.5-5.6s5.9 2 6.5 5.6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.9.7 3.1 2.4 3.5 5.2"/>
+{%- elif name == "bookmark" -%}<path d="M6 3h12v18l-6-4-6 4z"/>
+{%- elif name == "plus" -%}<path d="M12 5v14M5 12h14"/>
+{%- elif name == "plus-square" -%}<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M12 8v8M8 12h8"/>
+{%- elif name == "studio" -%}<rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/>
+{%- elif name == "shield" -%}<path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z"/><path d="m9 12 2 2 4-4"/>
+{%- elif name == "settings" -%}<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>
+{%- elif name == "user" -%}<circle cx="12" cy="8" r="4"/><path d="M4 21c.8-4.2 4-6.5 8-6.5s7.2 2.3 8 6.5"/>
+{%- elif name == "menu" -%}<path d="M4 7h16M4 12h16M4 17h10"/>
+{%- elif name == "logout" -%}<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/>
+{%- elif name == "search" -%}<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+{%- elif name == "heart" -%}<path d="M12 21s-7.5-4.6-9.6-9.3C.9 8.3 3 4.5 6.6 4.5c2.1 0 3.6 1.2 5.4 3.2 1.8-2 3.3-3.2 5.4-3.2 3.6 0 5.7 3.8 4.2 7.2C19.5 16.4 12 21 12 21z"/>
+{%- elif name == "comment" -%}<path d="M20.5 11.5a8 8 0 0 1-11.7 7.1L4 20l1.4-4.6a8 8 0 1 1 15.1-3.9z"/>
+{%- elif name == "send" -%}<path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/>
+{%- elif name == "share" -%}<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/>
+{%- elif name == "more" -%}<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>
+{%- elif name == "calendar" -%}<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 10h18"/>
+{%- elif name == "clock" -%}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+{%- elif name == "pin" -%}<path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>
+{%- elif name == "left" -%}<path d="m15 18-6-6 6-6"/>
+{%- elif name == "right" -%}<path d="m9 18 6-6-6-6"/>
+{%- elif name == "check" -%}<path d="m5 12 5 5 9-10"/>
+{%- elif name == "x" -%}<path d="M6 6l12 12M18 6 6 18"/>
+{%- elif name == "image" -%}<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>
+{%- elif name == "file" -%}<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>
+{%- elif name == "download" -%}<path d="M12 4v11M7 10l5 5 5-5M4 20h16"/>
+{%- elif name == "upload" -%}<path d="M12 20V9M7 14l5-5 5 5M4 4h16"/>
+{%- elif name == "edit" -%}<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>
+{%- elif name == "trash" -%}<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>
+{%- elif name == "flag" -%}<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>
+{%- elif name == "moon" -%}<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>
+{%- elif name == "sun" -%}<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+{%- elif name == "qr" -%}<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3M21 14v.01M17 21h4v-4M14 18v3"/>
+{%- elif name == "sparkles" -%}<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>
+{%- elif name == "chart" -%}<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>
+{%- elif name == "megaphone" -%}<path d="M3 11v2a2 2 0 0 0 2 2h2l5 4V5L7 9H5a2 2 0 0 0-2 2z"/><path d="M16 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>
+{%- elif name == "food" -%}<path d="M7 3v8a2 2 0 0 0 2 2v8M11 3v8a2 2 0 0 1-2 2M5 3v6M17 21V3c-2.2 0-4 2.5-4 6s1.8 5 4 5"/>
+{%- elif name == "link" -%}<path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>
+{%- elif name == "lock" -%}<rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+{%- elif name == "globe" -%}<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>
+{%- elif name == "rupee" -%}<path d="M6 4h12M6 9h12M9 4c6 0 6 9 0 9H6l8 7"/>
+{%- elif name == "scan" -%}<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/>
+{%- elif name == "play" -%}<path d="M7 4v16l13-8z"/>
+{%- elif name == "layers" -%}<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>
+{%- elif name == "trophy" -%}<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>
+{%- elif name == "mail" -%}<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/>
+{%- elif name == "phone" -%}<rect x="7" y="2" width="10" height="20" rx="3"/><path d="M11 18h2"/>
+{%- elif name == "tag" -%}<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="8" cy="8" r="1.5"/>
+{%- elif name == "award" -%}<circle cx="12" cy="9" r="6"/><path d="M8.5 14 7 22l5-3 5 3-1.5-8"/>
+{%- elif name == "eye" -%}<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>
+{%- elif name == "refresh" -%}<path d="M20 11a8 8 0 0 0-14.8-4M4 4v4h4M4 13a8 8 0 0 0 14.8 4M20 20v-4h-4"/>
+{%- elif name == "grid" -%}<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+{%- elif name == "list" -%}<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+{%- elif name == "wallet" -%}<rect x="3" y="6" width="18" height="14" rx="3"/><path d="M3 10h18M16 15h2"/>
+{%- elif name == "zap" -%}<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}
+
+{% macro vtick(verification, cls="") -%}
+{% if verification == "verified" %}<span class="vtick {{ cls }}" title="Verified college"><svg viewBox="0 0 24 24" fill="none"><path d="m5 12 5 5 9-10"/></svg></span>{% endif %}
+{%- endmacro %}
+
+{% macro avatar(name, path=None, size="md", extra="") -%}
+<span class="av av-{{ size }} {{ extra }}" style="--h: {{ name|hue }}">{% if path %}<img src="{{ url_for('media', rel=path) }}" alt="" loading="lazy">{% else %}{{ name|initials }}{% endif %}</span>
+{%- endmacro %}
+
+{% macro event_card(e, going=None, saved=False, reveal=True) -%}
+{% set pct = ((e.taken / e.capacity) * 100) if e.capacity else 0 %}
+{% set is_fest = e.kind == 'fest' %}
+<a class="ecard {{ 'reveal' if reveal }} {{ 'is-fest' if is_fest }}" href="{{ url_for('events.detail', eid=e.id) }}" data-tilt="5" style="--c: {{ e.category|cat_color }}">
+  <span class="glare"></span>
+  <div class="cover">
+    {% if e.banner %}<img src="{{ url_for('media', rel=e.banner) }}" alt="" loading="lazy">{% endif %}
+    <div class="tl">
+      <span class="pill dark">{{ e.category|cat_emoji }} {{ e.category }}</span>
+      {% if is_fest and e.sub_count %}<span class="pill fest">🎪 {{ e.sub_count }} events</span>{% endif %}
+      {% if is_fest %}{% elif e.status == 'completed' %}<span class="pill dark">Ended</span>{% elif e.taken >= e.capacity %}<span class="pill rose">Sold out</span>{% elif pct >= 75 %}<span class="pill brand">Filling fast</span>{% endif %}
+    </div>
+    {% if g.user %}<button class="save-btn {{ 'saved' if saved }}" data-save-event="{{ e.id }}" aria-label="Save event" type="button">{{ icon("bookmark", "ico sm") }}</button>{% endif %}
+  </div>
+  <div class="body">
+    <div class="date"><b>{{ e.start_dt|day }}</b><small>{{ e.start_dt|mon }}</small></div>
+    <div class="info">
+      <h3>{{ e.title }}</h3>
+      <span class="by">{{ e.college }}{{ vtick(e.verification) }}</span>
+      <div class="meta"><span>{{ icon("clock", "ico sm") }}{{ e.start_dt|time }}</span><span>{{ icon("pin", "ico sm") }}{{ e.city or e.venue }}</span></div>
+      <div class="foot">
+        <span class="fee {{ 'free' if not e.fee }}">{% if is_fest and e.fee %}<small>from</small> {% endif %}{{ "Free" if not e.fee else e.fee|inr }}</span>
+        {% if going %}
+          <span class="going"><span class="av-stack">{% for f in going[:3] %}{{ avatar(f.name, f.avatar, "xs") }}{% endfor %}</span>{{ going|length }} friend{{ 's' if going|length != 1 }}</span>
+        {% else %}
+          <span class="muted tiny">{% if is_fest %}{{ e.taken }} going{% else %}{{ e.taken }}/{{ e.capacity }} going{% endif %}</span>
+        {% endif %}
+      </div>
+      <div class="meter" aria-hidden="true"><i style="width: {{ [pct, 100]|min }}%"></i></div>
+    </div>
+  </div>
+</a>
+{%- endmacro %}
+
+{% macro reg_pill(status, pay_status=None) -%}
+{% if status == 'confirmed' %}<span class="pill green">{{ icon("check", "ico sm") }} Confirmed</span>
+{% elif status == 'payment_review' %}<span class="pill amber">Payment being verified</span>
+{% elif status == 'pending_payment' %}<span class="pill rose">{{ "Payment rejected" if pay_status == 'rejected' else "Payment pending" }}</span>
+{% elif status == 'waitlisted' %}<span class="pill blue">Waitlisted</span>
+{% elif status == 'cancelled' %}<span class="pill">Cancelled</span>{% endif %}
+{%- endmacro %}
+
+{% macro status_pill(s) -%}
+<span class="pill {{ {'open': 'green', 'closed': 'amber', 'completed': '', 'draft': ''}[s] }}">{{ {"open": "Open", "closed": "Closed", "completed": "Completed", "draft": "Draft"}[s] }}</span>
+{%- endmacro %}
+
+{% macro post_card(p, reveal=True) -%}
+<article class="post {{ 'reveal' if reveal }}" data-post="{{ p.id }}">
+  <header class="post-head">
+    <a href="{{ url_for('social.profile', username=p.username) }}">{{ avatar(p.author_name, p.author_avatar, "md") }}</a>
+    <div class="grow">
+      <a href="{{ url_for('social.profile', username=p.username) }}"><b>{{ p.author_name }}{{ vtick(p.verification) }}</b></a>
+      <small>{% if p.event_title %}{{ p.event_venue }}{% else %}@{{ p.username }}{% endif %} · {{ p.created_at|rel }}</small>
+    </div>
+    {% if g.user %}
+    <button class="iconbtn" data-modal-open="post-menu-{{ p.id }}" aria-label="More options" type="button">{{ icon("more") }}</button>
+    {% endif %}
+  </header>
+  {% if p.visual %}
+  <div class="post-media">
+    <div class="track">
+      {% for m in p.visual %}
+      <div class="slide">
+        {% if m.kind == 'image' %}<img src="{{ url_for('media', rel=m.path) }}" alt="Post image {{ loop.index }}" loading="lazy" draggable="false">
+        {% else %}<video src="{{ url_for('media', rel=m.path) }}#t=0.1" muted loop playsinline preload="metadata" data-autoplay></video>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% if p.visual|length > 1 %}
+      <button class="nav prev" type="button" aria-label="Previous">{{ icon("left", "ico sm") }}</button>
+      <button class="nav next" type="button" aria-label="Next">{{ icon("right", "ico sm") }}</button>
+      <div class="dots">{% for m in p.visual %}<i class="{{ 'on' if loop.first }}"></i>{% endfor %}</div>
+      <span class="pill dark counter">1/{{ p.visual|length }}</span>
+    {% endif %}
+  </div>
+  {% endif %}
+  <div class="post-actions">
+    <button class="act {{ 'liked' if p.liked }}" data-like="{{ p.id }}" aria-label="Like" type="button">{{ icon("heart") }}</button>
+    <a class="act" href="{{ url_for('social.post_view', pid=p.id) }}#comments" aria-label="Comments">{{ icon("comment") }}</a>
+    <button class="act" data-share="{{ url_for('social.post_view', pid=p.id) }}" data-title="{{ p.author_name }} on EventFlow" aria-label="Share" type="button">{{ icon("send") }}</button>
+    <button class="act {{ 'saved' if p.saved }}" style="margin-left:auto" data-save-post="{{ p.id }}" aria-label="Save" type="button">{{ icon("bookmark") }}</button>
+  </div>
+  <div class="post-body">
+    <div class="likes" data-likes>{{ p.likes }} like{{ 's' if p.likes != 1 }}</div>
+    {% if p.caption %}
+      <div class="cap clamp prose"><b>{{ p.username }}</b>{{ p.caption|rich }}</div>
+      {% if p.caption|length > 140 or p.caption.count('\n') > 2 %}<button class="more" data-more type="button">more</button>{% endif %}
+    {% endif %}
+    {% if p.comment_count > 2 %}<a class="muted small" href="{{ url_for('social.post_view', pid=p.id) }}#comments" data-comment-count>View all {{ p.comment_count }} comments</a>{% endif %}
+    <div data-comments>{% for c in p.latest %}<div class="cm"><b>{{ c.username }}</b>{{ c.body }}</div>{% endfor %}</div>
+    <span class="when">{{ p.created_at|date("%d %B") }}</span>
+  </div>
+  {% if p.files %}
+  <div class="files">
+    {% for f in p.files %}
+    <a class="file" href="{{ url_for('media', rel=f.path) }}" target="_blank" rel="noopener" download="{{ f.original_name }}">
+      <span class="ext">{{ (f.original_name or f.path).rsplit('.', 1)[-1]|upper }}</span>
+      <span class="grow"><b class="ellipsis">{{ f.original_name }}</b><small class="muted">{{ f.size|filesize }}</small></span>{{ icon("download", "ico sm") }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if p.event_id and p.event_title %}
+  <a class="post-cta" href="{{ url_for('events.detail', eid=p.event_id) }}">
+    <span class="date"><b>{{ p.event_start|day }}</b><small>{{ p.event_start|mon }}</small></span>
+    <span class="grow"><b>{{ p.event_title }}</b><small>{{ "Free" if not p.event_fee else p.event_fee|inr }} · {{ "Registration open" if p.event_status == 'open' else ("Ended" if p.event_status == 'completed' else "Registration closed") }}</small></span>
+    <span class="btn brand sm">{{ "View" if p.event_status != 'open' else "Register" }}</span>
+  </a>
+  {% endif %}
+  {% if g.user %}
+  <form class="comment-form" data-comment="{{ p.id }}" method="post" action="{{ url_for('social.comment_add', pid=p.id) }}">
+    {{ csrf_field() }}<input name="body" type="text" placeholder="Add a comment…" maxlength="1000" autocomplete="off" aria-label="Add a comment"><button type="submit" disabled data-noload>Post</button>
+  </form>
+  <div class="modal" id="post-menu-{{ p.id }}" hidden>
+    <div class="modal-card" style="padding:10px;width:min(360px,100%)">
+      <a class="btn ghost block" href="{{ url_for('social.post_view', pid=p.id) }}" style="border:0">Go to post</a>
+      <button class="btn ghost block" style="border:0" data-copy="{{ url_for('social.post_view', pid=p.id, _external=True) }}" type="button">Copy link</button>
+      {% if p.author_id == g.user.id or g.user.role == 'dev' %}
+      <form method="post" action="{{ url_for('social.post_delete', pid=p.id) }}" data-confirm="Delete this post for everyone?">{{ csrf_field() }}<button class="btn ghost block" style="border:0;color:var(--rose)">Delete post</button></form>
+      {% else %}
+      <form method="post" action="{{ url_for('social.report') }}">{{ csrf_field() }}<input type="hidden" name="target_type" value="post"><input type="hidden" name="target_id" value="{{ p.id }}">
+        <input type="hidden" name="reason" value="Inappropriate or misleading post"><button class="btn ghost block" style="border:0;color:var(--rose)">Report post</button></form>
+      {% endif %}
+      <button class="btn ghost block" style="border:0" data-modal-close type="button">Cancel</button>
+    </div>
+  </div>
+  {% endif %}
+</article>
+{%- endmacro %}
+
+{% macro empty(emoji, title, text, action_url=None, action_label=None) -%}
+<div class="empty"><span class="em">{{ emoji }}</span><h3>{{ title }}</h3><p>{{ text }}</p>{% if action_url %}<a class="btn brand" href="{{ action_url }}">{{ action_label }}</a>{% endif %}</div>
+{%- endmacro %}
+
+{% macro grid_tile(p) -%}
+{% set first = p.visual[0] if p.visual else None %}
+<a href="{{ url_for('social.post_view', pid=p.id) }}">
+  {% if first and first.kind == 'image' %}<img src="{{ url_for('media', rel=first.path) }}" alt="" loading="lazy">
+  {% elif first %}<video src="{{ url_for('media', rel=first.path) }}#t=0.1" muted loop playsinline preload="metadata" data-autoplay></video>
+  {% else %}<span class="textpost">{{ (p.caption or '')[:140] }}</span>{% endif %}
+  {% if p.visual|length > 1 %}<span class="badge">{{ icon("layers", "ico sm") }}</span>{% elif first and first.kind == 'video' %}<span class="badge">{{ icon("play", "ico sm fill") }}</span>{% endif %}
+  <span class="ov"><span>{{ icon("heart", "ico sm fill") }}{{ p.likes }}</span><span>{{ icon("comment", "ico sm fill") }}{{ p.comment_count }}</span></span>
+</a>
+{%- endmacro %}

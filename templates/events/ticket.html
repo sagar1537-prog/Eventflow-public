@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, reg_pill with context %}
+{% block title %}Ticket · {{ reg.title }}{% endblock %}
+{% block event_id %}{{ reg.event_id }}{% endblock %}
+{% block content %}
+{% set color = reg.category|cat_color %}
+<div class="page narrow page-enter" style="--c: {{ color }}">
+  <div class="row between" style="margin-bottom:6px"><a class="link small" href="{{ url_for('events.tickets') }}">All tickets</a>{{ reg_pill(reg.status, pay.status if pay else None) }}</div>
+
+  {% if reg.status == 'payment_review' %}
+  <div class="status-box wait"><b>Payment being verified</b><span>{{ reg.college }} is checking UTR {{ pay.utr if pay else '' }}. Your QR activates the moment it's approved.</span></div>
+  {% elif reg.status == 'pending_payment' %}
+  <div class="status-box bad"><b>{{ "Payment rejected" if pay and pay.status == 'rejected' else "Payment not finished" }}</b><span>{{ pay.note if pay and pay.note else "Complete payment to activate this ticket." }}</span>
+    {% if pay %}<a class="btn brand sm" style="margin-top:10px" href="{{ url_for('events.checkout', receipt=pay.receipt_no) }}">Complete payment</a>{% endif %}</div>
+  {% elif reg.status == 'waitlisted' %}
+  <div class="status-box wait"><b>You're #{{ waitpos }} on the waitlist</b><span>We'll notify you the moment a seat opens up.</span></div>
+  {% elif reg.status == 'cancelled' %}
+  <div class="status-box bad"><b>This ticket was cancelled</b></div>
+  {% endif %}
+
+  {% if win %}
+  <a class="win-banner" href="{{ url_for('events.certificate', code=reg.pass_code) }}"><span class="medal">{{ {1: "🥇", 2: "🥈", 3: "🥉"}.get(win.position, "🏅") }}</span>
+    <span class="grow"><b>{{ win.title }}!</b><small>+{{ win.points }} points · your certificate of achievement is ready</small></span>{{ icon("right", "ico sm") }}</a>
+  {% endif %}
+  <div class="pass-stage">
+    <div class="pass-tilt" data-tilt="7"><div class="pass3d" data-flip title="Tap to flip">
+      <div class="pass-face front">
+        <div class="pass-top">
+          <span class="row nw" style="gap:8px">{{ avatar(reg.college, reg.college_avatar, "xs") }}<small>{{ reg.college }}</small></span>
+          {% if reg.fest_title %}<small class="pass-fest">🎪 {{ reg.fest_title }}</small>{% endif %}
+          <h2>{{ reg.title }}</h2><small>{{ reg.start_dt|dt("%A, %d %B · %I:%M %p") }}</small>
+        </div>
+        <div class="perf"><i></i><i></i></div>
+        <div class="pass-body">
+          <div class="row nw" style="margin-bottom:6px">{{ avatar(reg.name, reg.avatar, "md") }}<div><b>{{ reg.name }}</b><br><small class="muted">@{{ reg.username }}{% if reg.team_name %} · Team {{ reg.team_name }}{% endif %}</small></div></div>
+          {% if reg.slot_start and reg.status == 'confirmed' %}
+          <div class="slotline" style="margin:10px 0;display:flex">{{ icon("clock", "ico sm") }}<span>Your slot <b>{{ reg.slot_start|time }}–{{ reg.slot_end|time }}</b>, {{ reg.slot_start|dt("%a %d %b") }} · <b>{{ reg.slot_venue }}</b></span></div>
+          {% endif %}
+          <div class="pass-qr {{ 'dim' if reg.status != 'confirmed' }}">{{ reg.pass_code|qr }}
+            {% if reg.status != 'confirmed' %}<span class="lockmsg">QR activates once your ticket is confirmed</span>{% endif %}</div>
+          <div class="pass-code">{{ reg.pass_code }}</div>
+          <p class="flip-hint">{% if reg.attended %}✅ Checked in {{ reg.checkin_time|dt("%d %b, %I:%M %p") }}{% else %}Show this at the entry desk · tap to flip{% endif %}</p>
+        </div>
+        <span class="pass-shine"></span>
+      </div>
+      <div class="pass-face back">
+        <div class="pass-top"><small>Ticket details</small><h2>{{ reg.title }}</h2></div>
+        <div class="pass-body" style="flex:1">
+          <div class="kv">
+            <div class="wide"><small>Venue</small><b>{{ reg.venue }}</b>{% if reg.venue_details %}<br><small>{{ reg.venue_details }}</small>{% endif %}</div>
+            <div><small>Starts</small><b>{{ reg.start_dt|dt("%d %b, %I:%M %p") }}</b></div>
+            <div><small>Ends</small><b>{{ reg.end_dt|dt("%d %b, %I:%M %p") }}</b></div>
+            <div><small>Food</small><b>{{ {"veg": "Veg", "nonveg": "Non-veg", "none": "No meal"}[reg.food_pref] }}</b></div>
+            <div><small>Paid</small><b>{{ "Free" if not reg.amount else reg.amount|inr }}</b></div>
+            <div><small>Holder</small><b>{{ reg.name }}</b></div>
+            <div><small>College</small><b>{{ reg.college_name or "—" }}</b></div>
+          </div>
+          <p class="flip-hint">Tap to flip back</p>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="ticket-actions">
+    <a class="btn ghost" href="{{ url_for('events.ics', eid=reg.event_id) }}">{{ icon("calendar", "ico sm") }}Add to calendar</a>
+    {% if reg.map_url %}<a class="btn ghost" href="{{ reg.map_url }}" target="_blank" rel="noopener">{{ icon("pin", "ico sm") }}Directions</a>{% endif %}
+    {% if reg.attended or win %}<a class="btn brand" href="{{ url_for('events.certificate', code=reg.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>{% endif %}
+    {% if pay and pay.status in ('paid', 'refunded') and pay.amount %}<a class="btn ghost" href="{{ url_for('events.receipt', receipt=pay.receipt_no) }}">{{ icon("download", "ico sm") }}Receipt</a>{% endif %}
+  </div>
+
+  {% if news %}
+  <section class="card" style="margin-top:22px">
+    <div class="card-head"><h3>Latest updates</h3><a class="link small" href="{{ url_for('events.detail', eid=reg.event_id) }}#updates">All updates</a></div>
+    {% for a in news %}<div class="note {{ 'important' if a.priority == 'important' }} {{ 'slot' if a.kind == 'slot' }}"><span class="bar"></span><div><b>{{ a.title }}</b><p>{{ a.body }}</p><span class="tiny muted">{{ a.created_at|rel }}</span></div></div>{% endfor %}
+  </section>
+  {% endif %}
+
+  {% if g.user.id == reg.user_id and reg.status not in ('cancelled',) and not reg.attended and reg.event_status != 'completed' %}
+  <form method="post" action="{{ url_for('events.cancel', code=reg.pass_code) }}" class="center" style="margin-top:24px"
+        data-confirm="Cancel your registration for {{ reg.title }}?{% if pay and pay.status == 'paid' and pay.amount %} A refund of ₹{{ pay.amount }} will be requested.{% endif %}">
+    {{ csrf_field() }}<button class="btn danger sm">{{ "Leave waitlist" if reg.status == 'waitlisted' else "Cancel registration" }}</button></form>
+  {% endif %}
+</div>
+{% endblock %}

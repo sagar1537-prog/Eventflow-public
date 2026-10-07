@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick with context %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+{% set u = g.user %}
+{% set labels = {"profile": ("Edit profile", "user"), "account": ("Account & security", "lock"), "privacy": ("Privacy", "eye"),
+                 "notifications": ("Notifications", "bell"), "appearance": ("Appearance", "moon"), "payments": ("Payments & verification", "wallet"),
+                 "danger": ("Delete account", "trash")} %}
+<div class="page page-enter">
+  <div class="head-row"><div><h1>Settings</h1><p>Manage your profile, account and how EventFlow works for you.</p></div></div>
+  <div style="display:grid;grid-template-columns:240px minmax(0,1fr);gap:24px" class="settings-grid">
+    <nav class="card" style="padding:8px;align-self:start">
+      {% for t in tabs if t != 'payments' or u.role == 'college' %}
+      <a class="nav-item {{ 'active' if tab == t }}" href="{{ url_for('social.settings', tab=t) }}" style="{{ 'color:var(--rose)' if t == 'danger' }}">{{ icon(labels[t][1]) }}<span>{{ labels[t][0] }}</span></a>
+      {% endfor %}
+      <div class="nav-sep"></div>
+      <form method="post" action="{{ url_for('auth.logout') }}">{{ csrf_field() }}<button class="nav-item" style="width:100%;border:0;background:none;cursor:pointer">{{ icon("logout") }}<span>Log out</span></button></form>
+      <div class="tk-credit"><span class="tk-team sm"><span class="knight" aria-hidden="true">♞&#xFE0E;</span><span class="muted">EventFlow by</span><span class="name">Tech-Knights</span></span></div>
+    </nav>
+
+    <section class="card pad-lg">
+    {% if tab == 'profile' %}
+      <h2>Edit profile</h2>
+      <form method="post" enctype="multipart/form-data">
+        {{ csrf_field() }}
+        <div class="row" style="margin:10px 0 20px;gap:18px">
+          <span style="position:relative">{{ avatar(u.name, u.avatar, "xl") }}<img id="av-prev" hidden alt="" style="position:absolute;inset:0;width:96px;height:96px;border-radius:50%;object-fit:cover"></span>
+          <div class="stack" style="--x:0">
+            <label class="btn ghost sm" style="margin:0">{{ icon("upload", "ico sm") }}Change photo<input type="file" name="avatar" accept="image/*" hidden data-preview="#av-prev"></label>
+            {% if u.avatar %}<label class="check small" style="margin:0"><input type="checkbox" name="remove_avatar"> Remove photo</label>{% endif %}
+          </div>
+        </div>
+        {% if u.role == 'college' %}
+        <div class="field"><label>Cover image <span class="hint">(1500×500 works best)</span></label>
+          <div class="prof-cover" style="height:120px;--h:{{ u.name|hue }}">{% if u.cover %}<img src="{{ url_for('media', rel=u.cover) }}" alt="">{% endif %}<img id="cv-prev" hidden alt="" style="position:absolute;inset:0"></div>
+          <div class="row" style="margin-top:8px"><label class="btn ghost sm" style="margin:0">{{ icon("image", "ico sm") }}Upload cover<input type="file" name="cover" accept="image/*" hidden data-preview="#cv-prev"></label>
+          {% if u.cover %}<label class="check small" style="margin:0"><input type="checkbox" name="remove_cover"> Remove cover</label>{% endif %}</div></div>
+        {% endif %}
+        <div class="grid-2">
+          <div class="field"><label for="name">{{ "Institution name" if u.role == 'college' else "Name" }}</label><input id="name" name="name" value="{{ u.name }}" required></div>
+          <div class="field"><label for="city">City</label><input id="city" name="city" value="{{ u.city or '' }}"></div>
+        </div>
+        <div class="field"><label for="bio">Bio</label><textarea id="bio" name="bio" maxlength="300" data-maxlen="#bio-n" style="min-height:90px">{{ u.bio or '' }}</textarea><span class="hint" id="bio-n" style="float:right"></span></div>
+        {% if u.role == 'student' %}
+        <div class="field"><label for="college_name">College</label><input id="college_name" name="college_name" value="{{ u.college_name or '' }}"></div>
+        <div class="grid-2">
+          <div class="field"><label for="department">Department</label><input id="department" name="department" value="{{ u.department or '' }}"></div>
+          <div class="field"><label for="year">Year</label><select id="year" name="year">{% for y in ["I","II","III","IV","V","PG"] %}<option {{ 'selected' if u.year == y }}>{{ y }}</option>{% endfor %}</select></div>
+        </div>
+        {% endif %}
+        <div class="field"><label for="website">Website</label><input id="website" name="website" type="url" value="{{ u.website or '' }}" placeholder="https://"></div>
+        <button class="btn brand">Save profile</button>
+      </form>
+
+    {% elif tab == 'account' %}
+      <h2>Account & security</h2>
+      <form method="post" autocomplete="off">
+        {{ csrf_field() }}
+        <div class="grid-2">
+          <div class="field"><label for="username">Username</label><input id="username" name="username" value="{{ u.username }}" required pattern="[A-Za-z0-9_.]{3,30}"></div>
+          <div class="field"><label for="phone">Mobile</label><input id="phone" name="phone" type="tel" value="{{ u.phone or '' }}"></div>
+        </div>
+        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" value="{{ u.email }}" required></div>
+        <div class="field"><label for="new_password">New password <span class="hint">(leave empty to keep the current one)</span></label>
+          <input id="new_password" name="new_password" type="password" autocomplete="new-password" data-strength="#pw-meter"><div class="strength" id="pw-meter"><i></i></div></div>
+        <hr class="sep">
+        <div class="field"><label for="current_password">Current password <span class="hint">(required to save)</span></label><input id="current_password" name="current_password" type="password" required autocomplete="current-password"></div>
+        <button class="btn brand">Save account</button>
+      </form>
+      <p class="small muted" style="margin-top:18px">Member since {{ info.joined|date("%d %B %Y") }} · {{ info.events }} registrations</p>
+
+    {% elif tab == 'privacy' %}
+      <h2>Privacy</h2>
+      <form method="post">
+        {{ csrf_field() }}
+        <div class="setting-row"><div><b>Who can see the events you join</b><small>Shown on your profile and as "friends going".</small></div>
+          <select name="show_events" style="width:auto">{% for v, l in [("everyone", "Everyone"), ("friends", "Friends"), ("nobody", "Only me")] %}<option value="{{ v }}" {{ 'selected' if u.show_events == v }}>{{ l }}</option>{% endfor %}</select></div>
+        <div class="setting-row"><div><b>Who can message you</b><small>Colleges you follow can always reply about events.</small></div>
+          <select name="allow_messages" style="width:auto">{% for v, l in [("everyone", "Everyone"), ("friends", "Friends"), ("nobody", "Nobody")] %}<option value="{{ v }}" {{ 'selected' if u.allow_messages == v }}>{{ l }}</option>{% endfor %}</select></div>
+        <div class="setting-row"><div><b>Hide me from suggestions</b><small>Keep your profile out of "People you may know".</small></div>
+          <label class="switch"><input type="checkbox" name="is_private" {{ 'checked' if u.is_private }}><span></span></label></div>
+        <button class="btn brand" style="margin-top:14px">Save privacy</button>
+      </form>
+
+    {% elif tab == 'notifications' %}
+      <h2>Notifications</h2>
+      <form method="post">
+        {{ csrf_field() }}
+        {% for key, title, text in [("notify_events", "Events and tickets", "Payments, slots, announcements, check-ins and certificates."),
+                                    ("notify_friends", "Friends and messages", "Friend requests and accepted requests."),
+                                    ("notify_posts", "Posts and activity", "New posts from colleges you follow, likes and comments.")] %}
+        <div class="setting-row"><div><b>{{ title }}</b><small>{{ text }}</small></div><label class="switch"><input type="checkbox" name="{{ key }}" {{ 'checked' if u[key] }}><span></span></label></div>
+        {% endfor %}
+        <button class="btn brand" style="margin-top:14px">Save notifications</button>
+      </form>
+
+    {% elif tab == 'appearance' %}
+      <h2>Appearance</h2>
+      <form method="post">
+        {{ csrf_field() }}
+        <div class="seg" style="margin:12px 0 18px">
+          {% for v, l, i in [("light", "Light", "sun"), ("dark", "Dark", "moon"), ("system", "Match device", "settings")] %}
+          <label><input type="radio" name="theme" value="{{ v }}" {{ 'checked' if u.theme == v }} onchange="this.form.requestSubmit()">{{ icon(i, "ico sm") }}{{ l }}</label>
+          {% endfor %}
+        </div>
+        <noscript><button class="btn brand">Save</button></noscript>
+      </form>
+      <p class="muted small">Tip: the moon button in the sidebar switches instantly.</p>
+
+    {% elif tab == 'payments' %}
+      <h2>Payments & verification</h2>
+      <div class="verify-banner {{ 'ok' if u.verification == 'verified' }}">
+        <span style="font-size:1.6rem">{{ {"verified": "✅", "pending": "⏳", "rejected": "⚠️", "none": "🏷️"}[u.verification] }}</span>
+        <div><b>{{ {"verified": "Your college is verified", "pending": "Verification is being reviewed", "rejected": "Verification wasn't approved", "none": "Not verified yet"}[u.verification] }}</b>
+          <div class="small muted-2">{% if u.verification == 'rejected' and u.verification_note %}{{ u.verification_note }}{% elif u.verification == 'verified' %}The blue tick shows on your profile, posts and events.{% else %}Verified colleges get a blue tick and rank higher in Explore.{% endif %}</div></div>
+      </div>
+      <form method="post">
+        {{ csrf_field() }}
+        <div class="field"><label for="upi_id">UPI ID <span class="hint">Students pay this ID by scanning a QR at checkout</span></label>
+          <input id="upi_id" name="upi_id" value="{{ u.upi_id or '' }}" placeholder="fest@okaxis"></div>
+        {% if u.verification in ('none', 'rejected') %}
+        <label class="check"><input type="checkbox" name="request_verification"> Request verification</label>
+        <div class="field"><label for="verification_note">Anything the EventFlow team should know? <span class="hint">(AICTE/UGC code, official website)</span></label>
+          <textarea id="verification_note" name="verification_note" style="min-height:70px"></textarea></div>
+        {% endif %}
+        <button class="btn brand">Save</button>
+      </form>
+
+    {% elif tab == 'danger' %}
+      <h2 style="color:var(--rose)">Delete account</h2>
+      {% if u.role == 'dev' %}<p>The developer account can't be deleted.</p>
+      {% else %}
+      <p class="muted-2">This permanently deletes your profile, {{ "events, posts and all registrations to your events" if u.role == 'college' else "tickets, messages and friendships" }}. It can't be undone.</p>
+      <form method="post" data-confirm="Delete your EventFlow account forever?">
+        {{ csrf_field() }}
+        <div class="field" style="max-width:340px"><label for="pw">Type your password to confirm</label><input id="pw" name="password" type="password" required></div>
+        <button class="btn danger">{{ icon("trash", "ico sm") }}Delete my account</button>
+      </form>
+      {% endif %}
+    {% endif %}
+    </section>
+  </div>
+</div>
+<style>@media (max-width: 860px) { .settings-grid { grid-template-columns: 1fr !important; } .settings-grid > nav { display: flex; overflow-x: auto; } .settings-grid > nav .nav-item { white-space: nowrap; } .settings-grid > nav .nav-sep, .settings-grid > nav form { display: none; } }</style>
+{% endblock %}

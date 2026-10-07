@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar with context %}
+{% block title %}Check-in · {{ e.title }}{% endblock %}
+{% block assistant %}{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Check-in desk</h1><p>{{ e.title }}. Scan tickets with the camera or type the code.</p></div>
+    <a class="btn ghost" href="{{ url_for('studio.event', eid=e.id) }}">Back to event</a></div>
+  <div class="scan-grid">
+    <div class="stack">
+      <div class="scanner">
+        <div id="reader"><p style="color:#8189A0;text-align:center;padding:40px 20px;margin:0">{{ icon("scan", "ico lg") }}<br>Camera is off.<br>Start it to scan, or type a code below.</p></div>
+        <div class="row" style="margin-top:12px"><button class="btn brand" id="cam-btn" type="button" data-noload>{{ icon("qr", "ico sm") }}<span>Start camera</span></button><span id="cam-msg" class="small" style="color:#8189A0"></span></div>
+      </div>
+      <form class="card" id="manual" autocomplete="off">
+        <label for="code">No camera? Type the ticket code</label>
+        <div class="row nw"><input id="code" placeholder="EVF-XXXXXX" style="text-transform:uppercase"><button class="btn" data-noload>Check in</button></div>
+      </form>
+    </div>
+    <div class="stack">
+      <div class="scan-result" id="result" aria-live="assertive"><h3>Ready to scan</h3><p class="muted mb-0">Name, slot, team and food choice appear here after each scan.</p></div>
+      <div class="card">
+        <div class="row between"><div><span class="big-n" id="att">{{ stats.attended }}</span><span class="muted"> / <span id="reg">{{ stats.registered }}</span> checked in</span></div>
+          <span class="pill green" id="pct">{{ stats.attendance_rate|pct }}</span></div>
+        <div class="meter" style="height:10px;margin-top:12px"><i id="bar" style="width:{{ stats.attendance_rate * 100 }}%;background:var(--green)"></i></div>
+      </div>
+      <div class="card">
+        <h3>Recent check-ins</h3>
+        <div id="recent">
+          {% for r in recent %}<div class="suggest">{{ avatar(r.name, r.avatar, "sm") }}<span class="grow"><b>{{ r.name }}</b><small>{{ r.department or '' }}</small></span><small class="muted">{{ r.checkin_time|time }}</small></div>
+          {% else %}<p class="muted mb-0" id="recent-empty">Nobody yet.</p>{% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/html5-qrcode.min.js') }}"></script>
+<script>
+(() => {
+  const EID = {{ e.id }}, result = document.getElementById("result"), recent = document.getElementById("recent");
+  let last = { c: "", t: 0 }, scanner = null, on = false;
+  const beep = (ok) => { try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain();
+    o.frequency.value = ok ? 880 : 220; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(.15, a.currentTime); o.start(); o.stop(a.currentTime + (ok ? .12 : .3)); } catch (e) {} };
+  async function check(code) {
+    code = (code || "").trim().toUpperCase();
+    if (!code || (code === last.c && Date.now() - last.t < 3000)) return;
+    last = { c: code, t: Date.now() };
+    let d;
+    try { d = await EF.api("{{ url_for('studio.api_checkin') }}", { code, event_id: EID }); } catch (e) { d = { level: "error", message: e.message }; }
+    result.className = "scan-result " + (d.level || "error");
+    const p = d.person, food = p ? { veg: "Veg", nonveg: "Non-veg", none: "No meal" }[p.food] : "";
+    result.innerHTML = `<h3>${EF.esc(d.message)}</h3>` + (p ? `<p class="mb-0">${EF.esc(p.college || "")}${p.department ? " · " + EF.esc(p.department) : ""}${p.team ? " · Team " + EF.esc(p.team) : ""}</p>
+      <p class="mb-0">${p.slot ? "Slot <b>" + EF.esc(p.slot) + "</b> · " : ""}Food <b>${EF.esc(food)}</b></p>` : "");
+    beep(d.ok);
+    if (navigator.vibrate) navigator.vibrate(d.ok ? 60 : [80, 60, 80]);
+    if (d.registered !== undefined) {
+      document.getElementById("att").textContent = d.attended; document.getElementById("reg").textContent = d.registered;
+      const pct = d.registered ? d.attended / d.registered : 0;
+      document.getElementById("pct").textContent = Math.round(pct * 100) + "%"; document.getElementById("bar").style.width = pct * 100 + "%";
+    }
+    if (d.ok && p) {
+      document.getElementById("recent-empty")?.remove();
+      const row = document.createElement("div"); row.className = "suggest"; row.style.animation = "bubble-in .4s var(--spring)";
+      row.innerHTML = `<span class="av av-sm" style="--h:${(p.name.length * 47) % 360}">${EF.esc(p.name.split(" ").map((x) => x[0]).slice(0, 2).join(""))}</span><span class="grow"><b>${EF.esc(p.name)}</b><small>${EF.esc(p.department || "")}</small></span><small class="muted">now</small>`;
+      recent.prepend(row);
+    }
+  }
+  document.getElementById("manual").addEventListener("submit", (e) => { e.preventDefault(); const i = document.getElementById("code"); last = { c: "", t: 0 }; check(i.value); i.value = ""; i.focus(); });
+  const btn = document.getElementById("cam-btn"), msg = document.getElementById("cam-msg");
+  btn.addEventListener("click", async () => {
+    if (!window.Html5Qrcode) { msg.textContent = "Scanner didn't load. Type codes instead."; return; }
+    if (on) { await scanner.stop(); on = false; btn.querySelector("span").textContent = "Start camera"; msg.textContent = "Camera stopped."; return; }
+    scanner = scanner || new Html5Qrcode("reader");
+    try {
+      await scanner.start({ facingMode: "environment" }, { fps: 12, qrbox: { width: 240, height: 240 } }, (t) => check(t));
+      on = true; btn.querySelector("span").textContent = "Stop camera"; msg.textContent = "Point at a ticket.";
+    } catch (err) { msg.textContent = "Couldn't open the camera. Allow access (needs https or localhost), or type the code."; }
+  });
+})();
+</script>
+{% endblock %}

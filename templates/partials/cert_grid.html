@@ -1,0 +1,13 @@
+{# certificate cards: expects certs, is_me #}
+<div class="cert-grid">
+  {% for c in certs %}
+  <a class="cert-card reveal {{ 'win' if c.win_title }}" data-tilt="8" style="--c: {{ c.category|cat_color }}"
+     href="{{ url_for('events.certificate', code=c.pass_code) if is_me else url_for('events.verify', code=c.pass_code) }}">
+    <span class="cc-ribbon">{{ "Achievement" if c.win_title else "Participation" }}</span>
+    <span class="cc-seal">{{ {1: "🥇", 2: "🥈", 3: "🥉"}.get(c.position, "🏅") if c.win_title else c.category|cat_emoji }}</span>
+    <b class="cc-title">{{ c.title }}</b>
+    <small class="cc-sub">{% if c.win_title %}{{ c.win_title }} · {% endif %}{{ c.college }}</small>
+    <span class="cc-foot"><span>{{ c.start_dt|date }}</span><span class="cc-cta">{{ "View" if is_me else "Verify" }} →</span></span>
+  </a>
+  {% endfor %}
+</div>

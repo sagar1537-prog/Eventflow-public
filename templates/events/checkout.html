@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar with context %}
+{% block title %}Checkout{% endblock %}
+{% block content %}
+<div class="page page-enter">
+  <div class="head-row"><div><h1>Complete your payment</h1><p>Your seat is confirmed as soon as the payment goes through.</p></div>
+    <span class="pill blue">{{ icon("lock", "ico sm") }} Order {{ order.code }}</span></div>
+  {% if order.status == 'rejected' %}
+  <div class="status-box bad"><b>Your last payment wasn't verified</b><span>{{ order.note or "Please check the UTR and submit again." }}</span></div>
+  {% elif order.status == 'submitted' %}
+  <div class="status-box wait"><b>Payment submitted</b><span>{{ p.college }} is verifying UTR {{ order.utr }}. Your seats are held.</span></div>
+  {% endif %}
+  <div class="checkout">
+    <div class="stack-lg">
+      {% if pts and order.status in ('created', 'rejected') and order.total %}
+      <section class="points-card reveal">
+        <div class="pc-coin" aria-hidden="true"><span>★</span></div>
+        <div class="grow">
+          {% if order.points %}
+          <b>{{ order.points }} points applied</b><small>You're saving {{ order.points|inr }} on this order.</small>
+          {% elif usable %}
+          <b>Use {{ usable }} points, save {{ usable|inr }}</b><small>You have {{ pts.balance }} points · up to {{ max_pct }}% of a ticket</small>
+          {% else %}
+          <b>{{ pts.balance }} points</b><small>Earn {{ paid_pts }} points with every registration and redeem them on your next ticket.</small>
+          {% endif %}
+        </div>
+        {% if order.points %}
+        <form method="post" action="{{ url_for('events.use_points', receipt=p.receipt_no) }}">{{ csrf_field() }}<input type="hidden" name="remove" value="1"><button class="btn ghost sm">Remove</button></form>
+        {% elif usable %}
+        <form method="post" action="{{ url_for('events.use_points', receipt=p.receipt_no) }}">{{ csrf_field() }}<button class="btn brand sm">Apply</button></form>
+        {% endif %}
+      </section>
+      {% endif %}
+      <section class="card pad-lg reveal">
+        <div class="card-head"><h2>Pay with any UPI app</h2><span class="muted small">GPay · PhonePe · Paytm · BHIM</span></div>
+        {% if upi %}
+        <div class="upi-box">
+          <a class="upi-qr" href="{{ upi }}" aria-label="Open in UPI app">{{ upi|qr }}</a>
+          <div>
+            <p class="muted small mb-0">Pay exactly</p>
+            <div style="font:800 2.2rem var(--display);letter-spacing:-.03em">{{ order.total|inr }}</div>
+            <p class="muted small" style="margin:10px 0 2px">to</p>
+            <div class="upi-id">{{ p.upi_id }} <button class="btn soft sm" type="button" data-copy="{{ p.upi_id }}" data-noload>Copy</button></div>
+            <p class="small muted-2" style="margin-top:4px">{{ p.college }}</p>
+            <a class="btn ghost sm show-sm" href="{{ upi }}" style="margin-top:6px">Open UPI app</a>
+          </div>
+        </div>
+        <ol class="steps" style="margin-top:20px">
+          <li>Scan the QR with any UPI app (or tap it on your phone).</li>
+          <li>Pay {{ order.total|inr }}{% if order.count > 1 %} once for all {{ order.count }} events{% endif %}. The note is pre-filled with your order number.</li>
+          <li>Copy the 12-digit UTR / UPI reference number from the payment receipt.</li>
+          <li>Paste it below. {{ p.college }} verifies it and your ticket activates.</li>
+        </ol>
+        <form method="post" action="{{ url_for('events.pay_upi', receipt=p.receipt_no) }}" enctype="multipart/form-data" style="margin-top:18px">
+          {{ csrf_field() }}
+          <div class="grid-2">
+            <div class="field"><label for="utr">UTR / UPI reference</label><input id="utr" name="utr" inputmode="numeric" pattern="\d{12}" maxlength="12" required placeholder="12 digits"></div>
+            <div class="field"><label for="shot">Payment screenshot <span class="hint">(optional, helps verification)</span></label><input id="shot" name="screenshot" type="file" accept="image/*" style="padding-top:10px;height:44px"></div>
+          </div>
+          <button class="btn brand lg block">I've paid, submit for verification</button>
+        </form>
+        {% else %}
+          <div class="status-box bad"><b>{{ p.college }} hasn't added a UPI ID yet</b><span>Message them or try again later.</span></div>
+        {% endif %}
+      </section>
+
+      {% if demo %}
+      <section class="paybar reveal">
+        <div><b>Demo mode</b><div class="small muted">Skip the UPI step and confirm instantly. Turn this off in the developer console before going live.</div></div>
+        <form method="post" action="{{ url_for('events.pay_demo', receipt=p.receipt_no) }}">{{ csrf_field() }}<button class="btn success">{{ icon("zap", "ico sm") }}Pay {{ order.total|inr }} (demo)</button></form>
+      </section>
+      {% endif %}
+    </div>
+
+    <aside class="order">
+      <div class="card pad-lg">
+        <div class="thumb">{% if order.banner %}<img src="{{ url_for('media', rel=order.banner) }}" alt="">{% endif %}</div>
+        <h3 class="mb-0">{{ order.title }}</h3>
+        <p class="muted small">{{ p.college }} · {{ order.start_dt|dt }}</p>
+        <div class="line-items">
+          {% for i in items %}
+          <div><span>{{ i.title if items|length > 1 else "Ticket" }}{% if i.team_name %} · {{ i.team_name }}{% endif %}
+            {% if items|length > 1 %}<br><small class="muted">{{ {"pass": "Track pass", "team": "Team fee (captain)"}.get(i.covers, "Entry" if i.base_amount else ("Included" if i.parent_id else "Free")) }}</small>{% endif %}</span>
+            <span>{{ i.base_amount|inr if i.base_amount else "₹0" }}</span></div>
+          {% endfor %}
+          {% if order.discount %}<div><span>Coupon discount</span><span style="color:var(--green)">−{{ order.discount|inr }}</span></div>{% endif %}
+          {% if order.points %}<div><span>Points ({{ order.points }} pts)</span><span style="color:var(--green)">−{{ order.points|inr }}</span></div>{% endif %}
+          <div class="total"><span>Total</span><span>{{ order.total|inr }}</span></div>
+        </div>
+        <p class="tiny muted" style="margin:14px 0 0">Cancel from My tickets before the event to request a full refund from {{ p.college }}.</p>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}

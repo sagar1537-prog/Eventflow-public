@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, empty with context %}
+{% block title %}Colleges · Developer{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Colleges</h1><p>Verify institutions so students can trust them. Verified colleges get the blue tick.</p></div></div>
+  {% include "dev/_nav.html" %}
+  <nav class="tabs">{% for k, l in [("pending", "Waiting for review"), ("verified", "Verified"), ("unverified", "Not verified"), ("all", "All")] %}<a class="{{ 'on' if tab == k }}" href="?tab={{ k }}">{{ l }}</a>{% endfor %}</nav>
+  {% if rows %}
+  <div class="stack">
+    {% for c in rows %}
+    <div class="card reveal row between">
+      <a class="row nw" href="{{ url_for('social.profile', username=c.username) }}">{{ avatar(c.name, c.avatar, "lg") }}
+        <span><b>{{ c.name }}{{ vtick(c.verification) }}</b><br><small class="muted">@{{ c.username }} · {{ c.city }} · {{ c.email }} · {{ c.phone or '' }}</small><br>
+        <small class="muted">{{ c.followers }} followers · {{ c.events }} events · joined {{ c.created_at|date }}{% if c.website %} · {{ c.website }}{% endif %}</small>
+        {% if c.verification_note %}<br><small>Note: {{ c.verification_note }}</small>{% endif %}</span></a>
+      <div class="row">
+        {% if c.verification != 'verified' %}
+          <form method="post" action="{{ url_for('dev.college_action', uid=c.id, action='verify') }}">{{ csrf_field() }}<button class="btn success sm">{{ icon("check", "ico sm") }}Verify</button></form>
+          {% if c.verification == 'pending' %}<form method="post" action="{{ url_for('dev.college_action', uid=c.id, action='reject') }}" class="row nw">{{ csrf_field() }}<input name="note" placeholder="Reason" style="height:32px;width:170px"><button class="btn danger sm">Reject</button></form>{% endif %}
+        {% else %}
+          <form method="post" action="{{ url_for('dev.college_action', uid=c.id, action='unverify') }}" data-confirm="Remove the blue tick from {{ c.name }}?">{{ csrf_field() }}<button class="btn ghost sm">Remove tick</button></form>
+        {% endif %}
+        <form method="post" action="{{ url_for('dev.user_action', uid=c.id, action='suspend' if c.status == 'active' else 'restore') }}" {% if c.status == 'active' %}data-confirm="Suspend {{ c.name }}? Their events stay but the account is locked."{% endif %}>{{ csrf_field() }}
+          <button class="btn sm {{ 'danger' if c.status == 'active' else 'ghost' }}">{{ "Suspend" if c.status == 'active' else "Restore" }}</button></form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}{{ empty("✅", "Nothing to review", "New college sign-ups will appear here.") }}{% endif %}
+</div>
+{% endblock %}

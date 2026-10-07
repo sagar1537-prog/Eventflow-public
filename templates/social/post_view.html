@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, post_card, grid_tile with context %}
+{% block title %}{{ post.author_name }}{% endblock %}
+{% block content %}
+<div class="page narrow page-enter">
+  {{ post_card(post, reveal=False) }}
+  <section class="card" id="comments">
+    <div class="card-head"><h3>Comments <span class="muted">{{ comments|length }}</span></h3></div>
+    {% for c in comments %}
+    <div class="row nw" style="align-items:flex-start;padding:8px 0">
+      <a href="{{ url_for('social.profile', username=c.username) }}">{{ avatar(c.name, c.avatar, "sm") }}</a>
+      <div class="grow"><a href="{{ url_for('social.profile', username=c.username) }}"><b>{{ c.username }}</b>{{ vtick(c.verification) }}</a> <span class="prose">{{ c.body|rich }}</span>
+        <div class="tiny muted">{{ c.created_at|rel }}
+          {% if g.user and (g.user.id in (c.user_id, post.author_id) or g.user.role == 'dev') %}
+            · <form method="post" action="{{ url_for('social.comment_delete', cid=c.id) }}" style="display:inline">{{ csrf_field() }}<button class="linkish tiny" style="color:var(--ink-3)">Delete</button></form>
+          {% elif g.user %}
+            · <form method="post" action="{{ url_for('social.report') }}" style="display:inline">{{ csrf_field() }}<input type="hidden" name="target_type" value="comment"><input type="hidden" name="target_id" value="{{ c.id }}"><input type="hidden" name="reason" value="Spam or abuse in comments"><button class="linkish tiny" style="color:var(--ink-3)">Report</button></form>
+          {% endif %}</div>
+      </div>
+    </div>
+    {% else %}<p class="muted">No comments yet. Start the conversation.</p>{% endfor %}
+    {% if g.user %}
+    <form method="post" action="{{ url_for('social.comment_add', pid=post.id) }}" class="row nw" style="margin-top:12px">
+      {{ csrf_field() }}<input name="body" placeholder="Add a comment…" maxlength="1000" required aria-label="Comment"><button class="btn brand">Post</button>
+    </form>
+    {% else %}<a class="btn ghost block" href="{{ url_for('auth.login', next=request.path) }}">Log in to comment</a>{% endif %}
+  </section>
+  {% if g.user and g.user.id == post.author_id %}
+  <details class="card" style="margin-top:16px"><summary style="cursor:pointer;font-weight:650">Edit caption</summary>
+    <form method="post" action="{{ url_for('social.post_edit', pid=post.id) }}" style="margin-top:12px">{{ csrf_field() }}
+      <textarea name="caption" maxlength="2200">{{ post.caption or '' }}</textarea><button class="btn sm" style="margin-top:8px">Save caption</button></form>
+  </details>
+  {% endif %}
+  {% if more %}
+  <h3 style="margin:28px 0 12px">More from {{ post.author_name }}</h3>
+  <div class="pgrid">{% for p in more %}{{ grid_tile(p) }}{% endfor %}</div>
+  {% endif %}
+</div>
+{% endblock %}

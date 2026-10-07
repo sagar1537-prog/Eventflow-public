@@ -1,0 +1,16 @@
+{% from "partials/macros.html" import icon with context %}
+<nav class="subnav" aria-label="Studio">
+  <a class="{{ 'on' if active == 'overview' }}" href="{{ url_for('studio.overview') }}">{{ icon("chart", "ico sm") }}Overview{% if pending_payments %} <span class="b">{{ pending_payments }}</span>{% endif %}</a>
+  {% if is_owner %}
+  <a class="{{ 'on' if active == 'new' }}" href="{{ url_for('studio.event_new') }}">{{ icon("plus", "ico sm") }}New event</a>
+  <a class="{{ 'on' if active == 'posts' }}" href="{{ url_for('studio.posts') }}">{{ icon("image", "ico sm") }}Posts</a>
+  <a class="{{ 'on' if active == 'team' }}" href="{{ url_for('studio.team') }}">{{ icon("users", "ico sm") }}Team</a>
+  {% endif %}
+  {% if can_assistant %}<a class="{{ 'on' if active == 'assistant' }}" href="{{ url_for('studio.assistant') }}">{{ icon("sparkles", "ico sm") }}Assistant{% if unanswered %} <span class="b">{{ unanswered }}</span>{% endif %}</a>{% endif %}
+  {% if side_events %}
+  <select onchange="if(this.value) location.href=this.value" aria-label="Jump to an event" style="width:auto;height:36px;border-radius:12px;font-size:.86rem;font-weight:600">
+    <option value="">Jump to event…</option>
+    {% for e in side_events %}<option value="{{ url_for('studio.event', eid=e.id) }}" {{ 'selected' if active == 'ev' ~ e.id }}>{% if e.fest %}↳ {{ e.fest }} · {% endif %}{{ e.title }}</option>{% endfor %}
+  </select>
+  {% endif %}
+</nav>

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, empty with context %}
+{% block title %}Reports · Developer{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Reports</h1><p>Things the community flagged. Take content down or dismiss the report.</p></div></div>
+  {% include "dev/_nav.html" %}
+  <nav class="tabs">{% for k, l in [("open", "Open"), ("resolved", "Resolved"), ("dismissed", "Dismissed"), ("all", "All")] %}<a class="{{ 'on' if tab == k }}" href="?tab={{ k }}">{{ l }}</a>{% endfor %}</nav>
+  {% if items %}
+  <div class="stack">
+    {% for r in items %}
+    <div class="card reveal row between">
+      <div class="grow">
+        <span class="pill {{ 'rose' if r.status == 'open' else '' }}">{{ r.target_type|capitalize }}</span> <b>{{ r.label }}</b>
+        {% if r.target_type == 'post' and r.target and r.target.caption %}<p class="muted small" style="margin:6px 0 0">“{{ r.target.caption[:160] }}”</p>{% endif %}
+        <p class="small" style="margin:6px 0 0">Reason: {{ r.reason }}</p>
+        <span class="tiny muted">Reported by {{ r.reporter or "deleted user" }} · {{ r.created_at|rel }} · {{ r.status }}</span>
+      </div>
+      <div class="row">
+        {% if r.link %}<a class="btn ghost sm" href="{{ r.link }}" target="_blank" rel="noopener">View</a>{% endif %}
+        {% if r.status == 'open' %}
+        <form method="post" action="{{ url_for('dev.report_action', rid=r.id, action='takedown') }}" data-confirm="Take this {{ r.target_type }} down?">{{ csrf_field() }}<button class="btn danger sm">{{ "Suspend account" if r.target_type == 'user' else "Take down" }}</button></form>
+        <form method="post" action="{{ url_for('dev.report_action', rid=r.id, action='dismiss') }}">{{ csrf_field() }}<button class="btn ghost sm">Dismiss</button></form>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}{{ empty("🛡️", "All clear", "No reports in this list.") }}{% endif %}
+</div>
+{% endblock %}

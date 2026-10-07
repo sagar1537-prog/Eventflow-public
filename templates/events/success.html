@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon with context %}
+{% block title %}You're in!{% endblock %}
+{% block content %}
+<div class="page narrow success" data-confetti>
+  <svg class="check-anim" viewBox="0 0 110 110"><circle cx="55" cy="55" r="50"/><path d="M33 57 l15 15 l30 -32"/></svg>
+  <h1>You're in! 🎉</h1>
+  {% if group|length > 1 %}
+  <p class="muted-2" style="font-size:1.1rem">You're registered for <b>{{ group|length }} events</b>{% if fest %} at <b>{{ fest.title }}</b>{% endif %}. Each has its own QR ticket.</p>
+  <div class="group-tickets">{% for r in group %}<a href="{{ url_for('events.ticket', code=r.pass_code) }}" style="animation-delay: {{ loop.index0 * 0.08 + 0.3 }}s">{{ icon("qr") }}<span class="grow"><b>{{ r.title }}</b><small>{{ r.start_dt|dt("%a %d %b, %I:%M %p") }} · {{ r.venue }}{% if r.team_name %} · Team {{ r.team_name }}{% endif %}</small></span>{{ icon("right", "ico sm") }}</a>{% endfor %}</div>
+  {% else %}
+  <p class="muted-2" style="font-size:1.1rem">Your ticket for <b>{{ reg.title }}</b>{% if fest %} ({{ fest.title }}){% endif %} is ready.<br>{{ reg.start_dt|dt("%A, %d %B at %I:%M %p") }} · {{ reg.venue }}</p>
+  {% endif %}
+  {% if earned %}
+  <a class="points-pop" href="{{ url_for('social.points') }}">
+    <span class="pc-coin" aria-hidden="true"><span>★</span></span>
+    <span><b>+{{ earned }} points</b><small>{{ summary.balance }} pts · {{ summary.level_emoji }} {{ summary.level }}</small></span>
+  </a>
+  {% endif %}
+  <div class="row" style="justify-content:center;margin-top:20px">
+    <a class="btn brand lg" href="{{ url_for('events.tickets') if group|length > 1 else url_for('events.ticket', code=reg.pass_code) }}">{{ icon("qr", "ico sm") }}{{ "My tickets" if group|length > 1 else "View my ticket" }}</a>
+    <a class="btn ghost lg" href="{{ url_for('events.ics', eid=reg.event_id) }}">{{ icon("calendar", "ico sm") }}Add to calendar</a>
+  </div>
+  <p class="small muted" style="margin-top:22px"><a class="link" href="{{ url_for('events.detail', eid=fest.id if fest else reg.event_id) }}">Back to {{ "the fest" if fest else "the event" }}</a> · Tell your friends from the event page</p>
+</div>
+{% endblock %}

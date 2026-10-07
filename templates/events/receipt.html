@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon with context %}
+{% block title %}Receipt {{ p.receipt_no }}{% endblock %}
+{% block content %}
+<div class="page narrow page-enter">
+  <div class="row between no-print" style="margin-bottom:14px"><a class="link small" href="{{ url_for('events.tickets') }}">My tickets</a>
+    <button class="btn ghost sm" type="button" data-save-pdf="{{ (reg.title if reg is defined else p.title)|e }}">{{ icon("download", "ico sm") }}Save as PDF</button></div>
+  <article class="receipt">
+    <div class="rhead">
+      <div class="row between"><span class="brand" style="padding:0;color:inherit"><span class="brand-mark" style="background:var(--brand)"><i style="background:var(--ink)"></i></span>EventFlow</span>
+        <span class="pill {{ 'green' if p.status == 'paid' else 'amber' if p.status == 'refunded' else 'rose' }}">{{ {"paid": "Paid", "refunded": "Refunded", "submitted": "Under review", "created": "Unpaid", "rejected": "Rejected"}[p.status] }}</span></div>
+      <h2 style="color:inherit;margin:18px 0 2px">{{ p.amount|inr }}</h2><small style="opacity:.7">Receipt {{ p.receipt_no }} · {{ p.created_at|dt("%d %b %Y, %I:%M %p") }}</small>
+    </div>
+    <div class="rbody">
+      <table>
+        <tr><td class="muted">Event</td><td>{{ p.title }}</td></tr>
+        <tr><td class="muted">Organiser</td><td>{{ p.college }}</td></tr>
+        <tr><td class="muted">Date</td><td>{{ p.start_dt|dt }}</td></tr>
+        <tr><td class="muted">Billed to</td><td>{{ user.name }} (@{{ user.username }})</td></tr>
+        <tr><td class="muted">Ticket</td><td>{{ p.pass_code }}</td></tr>
+        <tr><td class="muted">Ticket price</td><td>{{ p.base_amount|inr }}</td></tr>
+        {% if p.discount %}<tr><td class="muted">Discount</td><td>−{{ p.discount|inr }}</td></tr>{% endif %}
+        {% if p.points_used %}<tr><td class="muted">EventFlow points ({{ p.points_used }})</td><td>−{{ p.points_used|inr }}</td></tr>{% endif %}
+        <tr><td class="muted">Method</td><td>{{ {"upi": "UPI", "demo": "Demo payment", "free": "Free"}[p.method] }}{% if p.utr %} · Ref {{ p.utr }}{% endif %}</td></tr>
+        <tr><td><b>Total paid</b></td><td><b>{{ p.amount|inr }}</b></td></tr>
+      </table>
+      {% if p.note %}<p class="small muted" style="margin-top:12px">{{ p.note }}</p>{% endif %}
+      <p class="tiny muted" style="margin-top:16px">Paid directly to {{ p.college }}{% if p.upi_id %} ({{ p.upi_id }}){% endif %}. Contact the organiser for questions about this payment.</p>
+    </div>
+  </article>
+</div>
+{% endblock %}

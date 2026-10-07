@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, event_card, grid_tile, empty with context %}
+{% block title %}{{ u.name }}{% endblock %}
+{% block content %}
+<div class="page page-enter">
+  <div class="prof-cover" style="--h: {{ u.name|hue }}">{% if u.cover %}<img src="{{ url_for('media', rel=u.cover) }}" alt="">{% endif %}</div>
+  <div class="prof-head">
+    {{ avatar(u.name, u.avatar, "xxl") }}
+    <div class="who">
+      <h1>{{ u.name }}{{ vtick(u.verification, "lg") }}</h1>
+      <span class="handle">@{{ u.username }}{% if u.verification == 'pending' %} · <span class="pill amber">Verification pending</span>{% endif %}</span>
+    </div>
+    <div class="prof-actions">
+      {% if is_me %}
+        <a class="btn brand" href="{{ url_for('social.post_new') }}">{{ icon("plus", "ico sm") }}New post</a>
+        <a class="btn ghost" href="{{ url_for('studio.overview') }}">Studio</a>
+        <a class="btn ghost" href="{{ url_for('social.settings') }}">Edit profile</a>
+      {% elif g.user %}
+        <button class="btn {{ 'ghost' if following else 'brand' }}" data-follow="{{ u.id }}" type="button">{{ "Following" if following else "Follow" }}</button>
+        {% if can_message %}<a class="btn ghost" href="{{ url_for('social.messages', username=u.username) }}">{{ icon("chat", "ico sm") }}Message</a>{% endif %}
+      {% else %}
+        <a class="btn brand" href="{{ url_for('auth.login', next=request.path) }}">Follow</a>
+      {% endif %}
+      <button class="btn ghost icon" data-share="{{ url_for('social.profile', username=u.username) }}" data-title="{{ u.name }} on EventFlow" aria-label="Share profile" type="button">{{ icon("share", "ico sm") }}</button>
+    </div>
+  </div>
+  <div class="prof-stats">
+    <div><b>{{ posts|length }}</b><span>posts</span></div>
+    <div><b data-followers="{{ u.id }}">{{ followers }}</b><span>followers</span></div>
+    <div><b>{{ events|length }}</b><span>events</span></div>
+    <div><b>{{ attendees|compact }}</b><span>participants</span></div>
+  </div>
+  {% if u.bio %}<p class="prof-bio prose">{{ u.bio|rich }}</p>{% endif %}
+  <div class="prof-links">
+    {% if u.city %}<span>{{ icon("pin", "ico sm") }}{{ u.city }}</span>{% endif %}
+    {% if u.website %}<a class="link" href="{{ u.website }}" target="_blank" rel="noopener nofollow">{{ icon("globe", "ico sm") }}{{ u.website.replace('https://', '').replace('http://', '') }}</a>{% endif %}
+    {% if mutual_followers %}<span><span class="av-stack">{% for f in mutual_followers %}{{ avatar(f.name, f.avatar, "xs") }}{% endfor %}</span>
+      Followed by {{ mutual_followers|map(attribute='name')|map('truncate', 14, True, '')|join(', ') }}</span>{% endif %}
+  </div>
+
+  <nav class="tabs">
+    <a class="{{ 'on' if tab == 'posts' }}" href="?tab=posts">{{ icon("grid", "ico sm") }}Posts</a>
+    <a class="{{ 'on' if tab == 'events' }}" href="?tab=events">{{ icon("ticket", "ico sm") }}Events <span class="n">{{ events|length }}</span></a>
+    <a class="{{ 'on' if tab == 'about' }}" href="?tab=about">About</a>
+  </nav>
+  {% if tab == 'posts' %}
+    {% if posts %}<div class="pgrid">{% for p in posts %}{{ grid_tile(p) }}{% endfor %}</div>
+    {% else %}{{ empty("📸", "No posts yet", "When " ~ u.name ~ " shares posters and updates, they'll appear here.", url_for('social.post_new') if is_me else None, "Create the first post") }}{% endif %}
+  {% elif tab == 'events' %}
+    {% if events %}<div class="ecards">{% for e in events %}{{ event_card(e) }}{% endfor %}</div>
+    {% else %}{{ empty("🗓️", "No events yet", "Events from this college will appear here.") }}{% endif %}
+  {% else %}
+    <div class="card pad-lg" style="max-width:640px">
+      <h3>About {{ u.name }}</h3>
+      <p class="muted-2">{{ u.bio or "No description yet." }}</p>
+      <div class="kv">
+        <div><small>City</small><b>{{ u.city or "—" }}</b></div>
+        <div><small>On EventFlow since</small><b>{{ u.created_at|date("%B %Y") }}</b></div>
+        <div><small>Verification</small><b>{{ {"verified": "Verified ✓", "pending": "Pending review", "rejected": "Not verified", "none": "Not verified"}[u.verification] }}</b></div>
+        <div><small>Events hosted</small><b>{{ events|length }}</b></div>
+      </div>
+      {% if g.user and not is_me %}
+      <form method="post" action="{{ url_for('social.report') }}" data-confirm="Report this account to the EventFlow team?">
+        {{ csrf_field() }}<input type="hidden" name="target_type" value="user"><input type="hidden" name="target_id" value="{{ u.id }}">
+        <input type="hidden" name="reason" value="Possibly fake or misleading college account"><button class="btn danger sm">{{ icon("flag", "ico sm") }}Report account</button></form>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

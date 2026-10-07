@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, empty with context %}
+{% block title %}Messages{% endblock %}
+{% block body_class %}no-fab-sm{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="chat {{ 'has-thread' if other }}">
+    <aside class="chat-list">
+      <h2>Messages</h2>
+      {% for c in convs %}
+      <a class="conv {{ 'on' if other and other.id == c.other.id }} {{ 'unread' if c.unread }}" href="{{ url_for('social.messages', username=c.other.username) }}">
+        {{ avatar(c.other.name, c.other.avatar, "md") }}
+        <span class="grow"><b>{{ c.other.name }}{{ vtick(c.other.verification) }}</b><small>{% if c.last.sender_id == g.user.id %}You: {% endif %}{{ c.last.body or "Shared an event" }} · {{ c.last.created_at|rel }}</small></span>
+        {% if c.unread %}<span class="udot"></span>{% endif %}
+      </a>
+      {% endfor %}
+      {% if friends %}
+      <p class="small muted" style="padding:14px 16px 4px">Start a chat</p>
+      {% for f in friends if not convs|selectattr('other.id', 'equalto', f.id)|list %}
+      <a class="conv" href="{{ url_for('social.messages', username=f.username) }}">{{ avatar(f.name, f.avatar, "md") }}<span class="grow"><b>{{ f.name }}</b><small>@{{ f.username }}</small></span></a>
+      {% endfor %}
+      {% endif %}
+      {% if not convs and not friends %}<p class="muted small" style="padding:16px">Add friends to start chatting. Colleges you follow can be messaged too.</p>{% endif %}
+    </aside>
+    <section class="thread" {% if other %}data-thread="{{ other.username }}" data-last="{{ thread[-1].id if thread else 0 }}"{% endif %}>
+      {% if other %}
+      <header class="thread-head">
+        <a class="iconbtn show-sm" href="{{ url_for('social.messages') }}" aria-label="Back">{{ icon("left") }}</a>
+        <a class="row nw" href="{{ url_for('social.profile', username=other.username) }}">{{ avatar(other.name, other.avatar, "md") }}<span><b>{{ other.name }}{{ vtick(other.verification) }}</b><br><small class="muted">@{{ other.username }}</small></span></a>
+      </header>
+      <div class="thread-body">
+        {% for m in thread %}
+        <div class="bubble {{ 'me' if m.sender_id == g.user.id else 'them' }}">{{ m.body }}{% if m.event_id %}<a class="ev" href="{{ url_for('events.detail', eid=m.event_id) }}">🎟️ {{ m.event_title or 'Event' }}</a>{% endif %}<time>{{ m.created_at|time }}</time></div>
+        {% else %}<p class="center muted small chat-hello" style="margin:auto">Say hi to {{ other.name.split()[0] }} 👋</p>{% endfor %}
+      </div>
+      {% if can_send %}
+      <form class="thread-form" method="post" action="{{ url_for('social.message_send', username=other.username) }}" autocomplete="off">
+        {{ csrf_field() }}<input name="body" placeholder="Message…" maxlength="2000" aria-label="Message" autofocus><button class="btn brand icon" aria-label="Send" data-noload>{{ icon("send", "ico sm") }}</button>
+      </form>
+      {% else %}<p class="center muted small" style="padding:14px;border-top:1px solid var(--line)">{{ other.name.split()[0] }} only accepts messages from {{ "friends" if other.allow_messages == 'friends' else "nobody right now" }}.</p>{% endif %}
+      {% else %}
+      <div class="thread-empty"><div><span style="font-size:3rem">💬</span><h3>Your messages</h3><p>Plan events with friends and share tickets.</p></div></div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

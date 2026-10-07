@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon with context %}
+{% block title %}Payments · Developer{% endblock %}
+{% block content %}
+{% set labels = {"paid": "Paid", "submitted": "Under review", "created": "Started", "rejected": "Rejected", "refunded": "Refunded"} %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Payments</h1><p>Every transaction on the platform.</p></div></div>
+  {% include "dev/_nav.html" %}
+  <div class="kpis">{% for t in totals %}<a class="kpi lift" href="?status={{ t.status }}"><span>{{ labels[t.status] }}</span><b>{{ t.s|inr }}</b><small>{{ t.c }} payments</small></a>{% endfor %}</div>
+  <div class="filters">{% for s, l in [("", "All")] + labels|dictsort %}<a class="chip {{ 'on' if status == s }}" href="?status={{ s }}">{{ l }}</a>{% endfor %}</div>
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Receipt</th><th>Payer</th><th>Event</th><th>College</th><th>Method</th><th class="r">Amount</th><th class="r">Fee</th><th>Status</th><th>When</th></tr></thead>
+      <tbody>
+      {% for p in rows %}
+        <tr><td class="num small">{{ p.receipt_no }}</td><td>{{ p.name }}<br><small class="muted">@{{ p.username }}</small></td><td>{{ p.title }}</td><td>{{ p.college }}</td>
+          <td>{{ {"upi": "UPI", "demo": "Demo", "free": "Free"}[p.method] }}{% if p.utr %}<br><small class="muted num">{{ p.utr }}</small>{% endif %}</td>
+          <td class="r">{{ p.amount|inr }}</td><td class="r">{{ p.platform_fee|inr }}</td>
+          <td><span class="pill {{ {'paid': 'green', 'submitted': 'amber', 'rejected': 'rose', 'refunded': 'blue'}.get(p.status, '') }}">{{ labels[p.status] }}</span></td>
+          <td class="small nowrap">{{ p.created_at|rel }}</td></tr>
+      {% else %}<tr><td colspan="9" class="center muted" style="padding:30px">No payments.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

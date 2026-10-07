@@ -1,0 +1,156 @@
+{% from "partials/macros.html" import icon, avatar, vtick with context %}<!doctype html>
+<html lang="en" data-theme="{{ theme }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="theme-color" content="#0F1424">
+  <title>{% block title %}EventFlow{% endblock %} · EventFlow</title>
+  <meta name="description" content="EventFlow is where colleges post events and students discover, register, pay and show up together.">
+  <link rel="manifest" href="{{ url_for('manifest') }}">
+  <link rel="icon" href="{{ url_for('static', filename='img/icon.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/icon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v={{ asset_v }}">
+  {% if not g.user %}<script>try{var t=localStorage.getItem("ef-theme");if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>{% endif %}
+  {% block head %}{% endblock %}
+</head>
+<body data-auth="{{ 1 if g.user else 0 }}" data-event="{% block event_id %}{% endblock %}" class="{% block body_class %}{% endblock %}">
+{% if request.endpoint not in ('maintenance',) and not request.path.startswith('/verify') %}{% include "partials/intro.html" %}{% endif %}
+{% set ep = request.endpoint or '' %}
+{% block shell %}
+{% if g.user %}
+<div class="shell">
+  <nav class="sidenav" aria-label="Main">
+    <a class="brand" href="{{ url_for('social.home') }}"><span class="brand-mark"><i></i></span><span class="brand-text">EventFlow</span></a>
+    <a class="nav-item {{ 'active' if ep == 'social.home' }}" href="{{ url_for('social.home', feed=1) }}">{{ icon("home") }}<span class="label">Home</span></a>
+    <a class="nav-item {{ 'active' if ep == 'social.explore' }}" href="{{ url_for('social.explore') }}">{{ icon("compass") }}<span class="label">Explore</span></a>
+    {% if g.user.role == 'student' %}
+    <a class="nav-item {{ 'active' if ep.startswith('events.ticket') or ep in ('events.tickets', 'events.certificate', 'events.checkout', 'events.receipt') }}" href="{{ url_for('events.tickets') }}">{{ icon("ticket") }}<span class="label">My tickets</span></a>
+    {% endif %}
+    <a class="nav-item {{ 'active' if ep == 'social.messages' }}" href="{{ url_for('social.messages') }}">{{ icon("chat") }}<span class="label">Messages</span><span class="count" data-count-msgs data-n="{{ unread_msgs }}">{{ unread_msgs }}</span></a>
+    <a class="nav-item {{ 'active' if ep == 'social.notifications' }}" href="{{ url_for('social.notifications') }}">{{ icon("bell") }}<span class="label">Notifications</span><span class="count" data-count-notifs data-n="{{ unread_notifs }}">{{ unread_notifs }}</span></a>
+    {% if g.user.role == 'student' %}
+    <a class="nav-item {{ 'active' if ep == 'social.friends' }}" href="{{ url_for('social.friends') }}">{{ icon("users") }}<span class="label">Friends</span><span class="count" data-count-requests data-n="{{ friend_requests }}">{{ friend_requests }}</span></a>
+    {% endif %}
+    {% if my_points %}
+    <a class="nav-item {{ 'active' if ep == 'social.points' }}" href="{{ url_for('social.points') }}">{{ icon("trophy") }}<span class="label">Rewards</span><span class="pts-pill">★ {{ my_points.balance }}</span></a>
+    {% endif %}
+    <a class="nav-item {{ 'active' if ep == 'social.saved' }}" href="{{ url_for('social.saved') }}">{{ icon("bookmark") }}<span class="label">Saved</span></a>
+    {% if is_studio %}
+    <div class="nav-sep"></div>
+    <a class="nav-item {{ 'active' if ep.startswith('studio.') }}" href="{{ url_for('studio.overview') }}">{{ icon("studio") }}<span class="label">Studio</span></a>
+    {% endif %}
+    {% if g.user.role == 'dev' %}
+    <a class="nav-item {{ 'active' if ep.startswith('dev.') }}" href="{{ url_for('dev.overview') }}">{{ icon("shield") }}<span class="label">Developer</span></a>
+    {% endif %}
+    {% if g.user.role == 'college' %}
+    <a class="nav-item nav-create" href="{{ url_for('social.post_new') }}">{{ icon("plus-square") }}<span class="label">Create post</span></a>
+    {% endif %}
+    <div class="nav-foot">
+      <button class="nav-item" type="button" data-theme-toggle style="width:100%;border:0;background:none;cursor:pointer">{{ icon("moon") }}<span class="label">Dark mode</span></button>
+      <a class="nav-item {{ 'active' if ep == 'social.settings' }}" href="{{ url_for('social.settings') }}">{{ icon("settings") }}<span class="label">Settings</span></a>
+      <form method="post" action="{{ url_for('auth.logout') }}">{{ csrf_field() }}<button class="nav-item nav-logout" title="Log out">{{ icon("logout") }}<span class="label">Log out</span></button></form>
+      <div class="tk-credit"><span class="tk-team sm"><span class="knight" aria-hidden="true">♞&#xFE0E;</span><span class="name">Tech-Knights</span></span></div>
+      <a class="me-chip" href="{{ url_for('social.profile', username=g.user.username) }}">
+        {{ avatar(g.user.name, g.user.avatar, "sm") }}
+        <span class="who"><b>{{ g.user.name.split()[0] }}{{ vtick(g.user.verification) }}</b><small>@{{ g.user.username }}</small></span>
+      </a>
+    </div>
+  </nav>
+
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('social.home') }}"><span class="brand-mark"><i></i></span><span class="brand-text">EventFlow</span></a>
+    <a class="iconbtn" href="{{ url_for('social.explore') }}" aria-label="Search">{{ icon("search") }}</a>
+    <a class="iconbtn" href="{{ url_for('social.notifications') }}" aria-label="Notifications">{{ icon("bell") }}<span class="dot" data-count-notifs data-n="{{ unread_notifs }}">{{ unread_notifs }}</span></a>
+    <a class="iconbtn" href="{{ url_for('social.messages') }}" aria-label="Messages">{{ icon("chat") }}<span class="dot" data-count-msgs data-n="{{ unread_msgs }}">{{ unread_msgs }}</span></a>
+    <button class="iconbtn" type="button" data-modal-open="me-sheet" aria-label="Menu">{{ icon("menu") }}</button>
+  </header>
+
+  <div class="modal sheet" id="me-sheet" hidden>
+    <div class="modal-card sheet-card" role="dialog" aria-label="Account menu">
+      <span class="grab" data-modal-close></span>
+      <a class="sheet-me" href="{{ url_for('social.profile', username=g.user.username) }}">
+        {{ avatar(g.user.name, g.user.avatar, "lg") }}
+        <span class="grow"><b>{{ g.user.name }}{{ vtick(g.user.verification) }}</b><small>@{{ g.user.username }} · View profile</small></span>
+        {{ icon("right", "ico sm") }}
+      </a>
+      {% if my_points %}
+      <a class="sheet-points" href="{{ url_for('social.points') }}"><span class="coin-sm">★</span><span class="grow"><b>{{ my_points.balance }} points</b><small>{{ my_points.level_emoji }} {{ my_points.level }} · tap for rewards</small></span>{{ icon("right", "ico sm") }}</a>
+      {% endif %}
+      <div class="sheet-grid">
+        {% if g.user.role == 'student' %}
+        <a href="{{ url_for('events.tickets') }}">{{ icon("ticket") }}<span>My tickets</span></a>
+        <a href="{{ url_for('social.profile', username=g.user.username, tab='certs') }}">{{ icon("award") }}<span>Certificates</span></a>
+        <a href="{{ url_for('social.friends') }}">{{ icon("users") }}<span>Friends</span></a>
+        {% endif %}
+        <a href="{{ url_for('social.saved') }}">{{ icon("bookmark") }}<span>Saved</span></a>
+        {% if is_studio %}<a href="{{ url_for('studio.overview') }}">{{ icon("studio") }}<span>Studio</span></a>{% endif %}
+        {% if g.user.role == 'college' %}<a href="{{ url_for('social.post_new') }}">{{ icon("plus-square") }}<span>New post</span></a>{% endif %}
+        {% if g.user.role == 'dev' %}<a href="{{ url_for('dev.overview') }}">{{ icon("shield") }}<span>Developer</span></a>{% endif %}
+        <a href="{{ url_for('social.settings') }}">{{ icon("settings") }}<span>Settings</span></a>
+        <button type="button" data-theme-toggle>{{ icon("moon") }}<span>Dark mode</span></button>
+      </div>
+      <form method="post" action="{{ url_for('auth.logout') }}" class="sheet-logout">{{ csrf_field() }}<button class="btn danger-soft block lg">{{ icon("logout", "ico sm") }}Log out</button></form>
+      <div class="tk-credit"><span>Crafted by</span><span class="tk-team sm"><span class="knight" aria-hidden="true">♞&#xFE0E;</span><span class="name">Tech-Knights</span></span></div>
+    </div>
+  </div>
+
+  <main class="main" id="main">
+    {% if setting('banner_text') %}<div class="notice-banner" style="margin:-26px -32px 22px">{{ setting('banner_text') }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <nav class="bottombar" aria-label="Main">
+    <a class="{{ 'on' if ep == 'social.home' }}" href="{{ url_for('social.home', feed=1) }}" aria-label="Home">{{ icon("home", "ico lg") }}</a>
+    <a class="{{ 'on' if ep == 'social.explore' }}" href="{{ url_for('social.explore') }}" aria-label="Explore">{{ icon("compass", "ico lg") }}</a>
+    {% if g.user.role == 'college' %}
+      <a href="{{ url_for('social.post_new') }}" aria-label="Create post"><span class="create">{{ icon("plus") }}</span></a>
+      <a class="{{ 'on' if ep.startswith('studio.') }}" href="{{ url_for('studio.overview') }}" aria-label="Studio">{{ icon("studio", "ico lg") }}</a>
+    {% elif g.user.role == 'dev' %}
+      <a class="{{ 'on' if ep.startswith('dev.') }}" href="{{ url_for('dev.overview') }}" aria-label="Developer">{{ icon("shield", "ico lg") }}</a>
+      <a class="{{ 'on' if ep == 'social.settings' }}" href="{{ url_for('social.settings') }}" aria-label="Settings">{{ icon("settings", "ico lg") }}</a>
+    {% else %}
+      <a class="{{ 'on' if ep.startswith('events.ticket') or ep == 'events.tickets' }}" href="{{ url_for('events.tickets') }}" aria-label="My tickets">{{ icon("ticket", "ico lg") }}</a>
+      <a class="{{ 'on' if ep == 'social.friends' }}" href="{{ url_for('social.friends') }}" aria-label="Friends">{{ icon("users", "ico lg") }}</a>
+    {% endif %}
+    <a class="{{ 'on' if ep == 'social.profile' }}" href="{{ url_for('social.profile', username=g.user.username) }}" aria-label="Profile">{{ avatar(g.user.name, g.user.avatar, "xs") }}</a>
+  </nav>
+</div>
+{% else %}
+  <header class="landing-nav">
+    <a class="brand" href="{{ url_for('social.home') }}" style="padding:0"><span class="brand-mark"><i></i></span><span class="brand-text">EventFlow</span></a>
+    <div class="row">
+      <a class="btn ghost sm hide-sm" href="{{ url_for('social.explore') }}">Explore events</a>
+      <button class="iconbtn" type="button" data-theme-toggle aria-label="Toggle dark mode">{{ icon("moon") }}</button>
+      <a class="btn ghost sm" href="{{ url_for('auth.login') }}">Log in</a>
+      <a class="btn brand sm" href="{{ url_for('auth.signup_choice') }}">Sign up</a>
+    </div>
+  </header>
+  <main class="main" style="padding-top:10px">{% block anon_content %}{{ self.content() }}{% endblock %}</main>
+{% endif %}
+{% endblock %}
+
+<div class="toasts" aria-live="polite"></div>
+{% with messages = get_flashed_messages(with_categories=true) %}{% for cat, msg in messages %}<i hidden data-flash="{{ msg }}" data-kind="{{ cat }}"></i>{% endfor %}{% endwith %}
+
+{% block assistant %}
+<button class="ask-fab no-print" type="button" aria-label="Ask EventFlow assistant"><span class="orb">{{ icon("sparkles", "ico sm") }}</span><span class="label">Ask EventFlow</span></button>
+<section class="ask-panel no-print" hidden aria-label="EventFlow assistant">
+  <header class="ask-head"><span class="orb"></span><div><b>EventFlow Assistant</b><small>Knows every event, venue, slot and fee</small></div>
+    <button class="ask-close" type="button" aria-label="Close">×</button></header>
+  <div class="ask-log" aria-live="polite">
+    <div class="bubble them">Hi{% if g.user %} {{ g.user.name.split()[0] }}{% endif %}! 👋 Ask me about events, timings, venues, fees{% if g.user and g.user.role == 'student' %}, or your own tickets and slots{% endif %}.</div>
+  </div>
+  <div class="ask-sugg">
+    {% if g.user and g.user.role == 'student' %}<button type="button">Where is my slot?</button><button type="button">Show my tickets</button>{% endif %}
+    <button type="button">Which events are free?</button><button type="button">When is the hackathon?</button><button type="button">How do refunds work?</button>
+  </div>
+  <form class="ask-form" autocomplete="off"><input type="text" placeholder="Ask anything…" maxlength="500" aria-label="Your question">
+    <button class="btn brand" type="submit" aria-label="Send" data-noload>{{ icon("send", "ico sm") }}</button></form>
+</section>
+{% endblock %}
+
+<script src="{{ url_for('static', filename='js/app.js') }}?v={{ asset_v }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

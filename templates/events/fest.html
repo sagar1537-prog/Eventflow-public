@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, grid_tile with context %}
+{% block title %}{{ e.title }}{% endblock %}
+{% block event_id %}{{ e.id }}{% endblock %}
+{% block body_class %}has-cta{% endblock %}
+{% block content %}
+{% set color = e.category|cat_color %}
+{% set student = g.user and g.user.role == 'student' %}
+<div class="page wide page-enter fest-page" style="--c: {{ color }}">
+  <section class="ev-hero fest-hero">
+    <div class="bg" style="background-image: {% if e.banner %}url('{{ url_for('media', rel=e.banner) }}'){% else %}linear-gradient(135deg, #7C3AED, #D9418C 55%, #0F1424){% endif %}"></div>
+    <div class="fest-orbs" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="actions">
+      {% if g.user %}<button class="iconbtn {{ 'saved' if saved }}" data-save-event="{{ e.id }}" aria-label="Save" type="button">{{ icon("bookmark") }}</button>{% endif %}
+      <button class="iconbtn" data-share="{{ url_for('events.detail', eid=e.id) }}" data-title="{{ e.title }}" aria-label="Share" type="button">{{ icon("share") }}</button>
+      {% if friends_list %}<button class="iconbtn" data-modal-open="share-friends" aria-label="Send to friends" type="button">{{ icon("send") }}</button>{% endif %}
+    </div>
+    <div class="in">
+      <div class="row" style="gap:6px">
+        <span class="pill dark">🎪 Fest · {{ subs|length }} events</span>
+        {% if e.status != 'open' %}<span class="pill dark">{{ {"closed": "Registration closed", "completed": "Fest ended", "draft": "Draft (only you can see this)"}[e.status] }}</span>{% endif %}
+        {% if e.is_featured %}<span class="pill brand">★ Featured</span>{% endif %}
+      </div>
+      <h1>{{ e.title }}</h1>
+      {% if e.tagline %}<p>{{ e.tagline }}</p>{% endif %}
+      <a class="by" href="{{ url_for('social.profile', username=e.college_username) }}">{{ avatar(e.college, e.college_avatar, "sm") }}{{ e.college }}{{ vtick(e.verification) }}</a>
+    </div>
+  </section>
+
+  <div class="facts fest-facts">
+    <div class="fact reveal"><span class="ic">{{ icon("calendar") }}</span><div><small>Dates</small><b>{{ e.start_dt|dt("%a %d %b") }}{% if e.start_dt[:10] != e.end_dt[:10] %} – {{ e.end_dt|dt("%a %d %b") }}{% endif %}</b><br><small>{{ e.start_dt|until }}</small></div></div>
+    <div class="fact reveal"><span class="ic">{{ icon("pin") }}</span><div><small>Venue</small><b>{{ e.venue }}{% if e.city %}, {{ e.city }}{% endif %}</b>{% if e.map_url %}<br><a class="link small" href="{{ e.map_url }}" target="_blank" rel="noopener">Open in Maps</a>{% endif %}</div></div>
+    <div class="fact reveal"><span class="ic">{{ icon("layers") }}</span><div><small>Events</small><b>{{ subs|length }} across {{ groups|length }} track{{ 's' if groups|length != 1 }}</b><br><small>{{ participants }} registered so far</small></div></div>
+  </div>
+
+  {% if going %}
+  <div class="card reveal row nw" style="margin-top:14px"><span class="av-stack">{% for f in going[:5] %}<a href="{{ url_for('social.profile', username=f.username) }}">{{ avatar(f.name, f.avatar, "md") }}</a>{% endfor %}</span>
+    <span><b>{{ going[0].name.split()[0] }}{% if going|length > 1 %} and {{ going|length - 1 }} other friend{{ 's' if going|length > 2 }}{% endif %}</b> {{ "are" if going|length > 1 else "is" }} going</span></div>
+  {% endif %}
+
+  {% if my_regs %}
+  <section class="my-fest reveal">
+    <div class="card-head"><h3>🎟️ You're registered for {{ my_regs|length }} event{{ 's' if my_regs|length != 1 }}</h3><a class="link small" href="{{ url_for('events.tickets') }}">My tickets</a></div>
+    <div class="my-fest-list">{% for it in my_regs %}<a href="{{ url_for('events.ticket', code=it.mine.pass_code) }}" class="mf-chip {{ it.mine.status }}">{{ it.e.title }}<small>{{ {"confirmed": "Ticket ready", "payment_review": "Verifying payment", "pending_payment": "Pay to confirm", "waitlisted": "Waitlist"}.get(it.mine.status, it.mine.status) }}</small></a>{% endfor %}</div>
+  </section>
+  {% endif %}
+
+  <div class="price-strip reveal">
+    {% for gr in groups %}{% set t = gr.t %}
+    <a class="ps-chip" href="#track-{{ t.id }}"><span class="e">{{ t.emoji }}</span><span><b>{{ t.name }}</b>
+      <small>{% if t.pricing == 'pass' %}{{ "Free" if not t.pass_fee else t.pass_fee|inr }} pass · all {{ gr["items"]|length }} events{% else %}{% set fees = gr["items"]|map(attribute='e')|map(attribute='fee')|list %}{% if not fees or fees|max == 0 %}Free{% else %}{% set types = gr["items"]|map(attribute='e')|map(attribute='fee_type')|unique|list %}{% set per = "per team" if types == ['team'] else "per event" %}{% if fees|min == fees|max %}{{ fees|max|inr }} {{ per }}{% else %}{{ fees|select|min|inr }}–{{ fees|max|inr }} {{ per }}{% endif %}{% endif %}{% endif %}</small></span></a>
+    {% endfor %}
+  </div>
+
+  <div class="ev-grid">
+    <form class="stack-lg" id="pick" method="post" action="{{ url_for('events.join', eid=e.id) }}" data-fest-form>
+      {{ csrf_field() }}
+      {% for gr in groups %}{% set t = gr.t %}
+      <section class="track-card reveal" id="track-{{ t.id }}" data-track="{{ t.id }}" data-pricing="{{ t.pricing }}" data-pass-fee="{{ t.pass_fee }}" data-has-pass="{{ 1 if gr.has_pass else 0 }}">
+        <header class="track-head">
+          <span class="track-emoji">{{ t.emoji }}</span>
+          <div class="grow"><h2>{{ t.name }}</h2>{% if t.blurb %}<p>{{ t.blurb }}</p>{% endif %}</div>
+          {% if t.pricing == 'pass' %}<span class="pass-badge {{ 'held' if gr.has_pass }}">{% if gr.has_pass %}✓ Pass active{% else %}<b>{{ "Free" if not t.pass_fee else t.pass_fee|inr }}</b> one pass · every event{% endif %}</span>{% endif %}
+        </header>
+        <div class="sub-list">
+          {% for it in gr["items"] %}{% set s = it.e %}
+          {% set disabled = not student or it.mine or not it.open or not is_open %}
+          <label class="sub-row {{ 'mine' if it.mine }} {{ 'off' if (not it.open and not it.mine) }}" data-sub="{{ s.id }}" data-fee="{{ s.fee }}" data-fee-type="{{ s.fee_type }}" data-team="{{ s.team_size }}">
+            <span class="tick">{% if it.mine %}{{ icon("check", "ico sm") }}{% else %}<input type="checkbox" name="pick" value="{{ s.id }}" {{ 'disabled' if disabled }} {{ 'checked' if s.id in sel and not disabled }}><i>{{ icon("check", "ico sm") }}</i>{% endif %}</span>
+            <span class="sub-main">
+              <span class="sub-title"><b>{{ s.title }}</b>{% if s.label %}<span class="pill soft">{{ s.label }}</span>{% endif %}{% if s.team_size > 1 %}<span class="pill soft">👥 up to {{ s.team_size }}</span>{% endif %}</span>
+              <small>{{ s.start_dt|dt("%a %d %b, %I:%M %p") }} · {{ s.venue }}{% if it.open and it.left <= 10 %} · <b class="hot">{{ it.left }} left</b>{% endif %}</small>
+              {% if s.team_size > 1 and not it.mine %}
+              <span class="team-in" hidden><input name="team_{{ s.id }}" maxlength="60" placeholder="Team name (teammates use the same)" {{ 'disabled' if disabled }} autocomplete="off">
+                <small>{% if s.fee_type == 'team' and s.fee and t.pricing != 'pass' %}The first member (captain) pays {{ s.fee|inr }} for the team; teammates join free.{% else %}Up to {{ s.team_size }} per team.{% endif %}</small></span>
+              {% endif %}
+            </span>
+            <span class="sub-side">
+              {% if it.mine %}<a class="link small" href="{{ url_for('events.ticket', code=it.mine.pass_code) }}">Registered</a>
+              {% elif not it.open %}<span class="muted tiny">{{ "Full" if it.reason == "All seats are taken." else "Closed" }}</span>
+              {% else %}<span class="sub-price">{% if t.pricing == 'pass' %}{{ "✓ in pass" if gr.has_pass else "Pass" }}{% elif not s.fee %}Free{% else %}{{ s.fee|inr }}{% if s.fee_type == 'team' %}<small>/team</small>{% endif %}{% endif %}</span>{% endif %}
+              <a class="sub-more" href="{{ url_for('events.detail', eid=s.id) }}" aria-label="Details of {{ s.title }}">{{ icon("right", "ico sm") }}</a>
+            </span>
+          </label>
+          {% else %}<p class="muted small" style="padding:14px">Events coming soon.</p>{% endfor %}
+        </div>
+      </section>
+      {% else %}
+      <section class="card pad-lg center"><span style="font-size:2.4rem">🎪</span><h3>Events are being added</h3><p class="muted">Check back soon.</p></section>
+      {% endfor %}
+
+    </form>
+
+    <aside class="stack-lg fest-aside">
+      {% if student and is_open %}
+      <section class="card pad-lg fest-summary" id="register">
+        <h3>Your picks</h3>
+        <div class="field"><label>Food preference</label>
+          <div class="seg">{% for v, l in [("veg", "🥗 Veg"), ("nonveg", "🍗 Non-veg"), ("none", "No meal")] %}<label><input type="radio" form="pick" name="food_pref" value="{{ v }}" {{ 'checked' if loop.first }}>{{ l }}</label>{% endfor %}</div></div>
+        <div class="line-items" data-lines><p class="muted small mb-0">Tick the events you want above. You pay once for all of them.</p></div>
+        <button class="btn brand block lg" type="submit" form="pick" data-fest-go disabled>Pick events to continue</button>
+        {% if pts and pts.balance %}<div class="pts-hint"><span class="coin-sm">★</span><span>You can use your <b>{{ pts.balance }} points</b> at checkout.</span></div>{% endif %}
+        <p class="tiny muted center" style="margin:10px 0 0">One UPI payment for everything. Each event gets its own QR ticket.</p>
+      </section>
+      {% elif not g.user %}
+      <section class="card pad-lg center" id="register"><a class="btn brand lg" href="{{ url_for('auth.login', next=request.path) }}">Log in to register</a></section>
+      {% endif %}
+      {% if can_manage %}<a class="btn ghost block" href="{{ url_for('studio.event', eid=e.id) }}">{{ icon("studio", "ico sm") }}Manage fest in Studio</a>{% endif %}
+      <section class="card pad-lg reveal">
+        <h3>About</h3>
+        <div class="prose muted-2">{{ (e.description or e.tagline or "Details coming soon.")|rich }}</div>
+      </section>
+      {% if results %}
+      <section class="card pad-lg reveal" id="winners">
+        <h3>🏆 Results</h3>
+        {% for r in results %}
+        <div class="res-block"><b>{{ r.e.title }}</b>
+          {% for w in r.winners %}<div class="win-row"><span class="medal">{{ {1: "🥇", 2: "🥈", 3: "🥉"}.get(w.position, "🏅") }}</span><span class="grow"><b>{{ w.label }}</b><small class="muted">{{ w.title }}</small></span></div>{% endfor %}
+        </div>
+        {% endfor %}
+      </section>
+      {% endif %}
+      {% if news %}
+      <section class="card pad-lg reveal" id="updates">
+        <h3>Updates</h3>
+        {% for a in news %}<div class="note {{ 'important' if a.priority == 'important' }}"><span class="bar"></span><div><b>{{ a.title }}</b><p>{{ a.body|rich }}</p><span class="tiny muted">{{ a.created_at|rel }}</span></div></div>{% endfor %}
+      </section>
+      {% endif %}
+      {% if faqs %}
+      <section class="card pad-lg faq reveal"><h3>Questions</h3>{% for f in faqs %}<details><summary>{{ f.question }}</summary><p>{{ f.answer }}</p></details>{% endfor %}</section>
+      {% endif %}
+      <a class="card row nw reveal" href="{{ url_for('social.profile', username=e.college_username) }}">{{ avatar(e.college, e.college_avatar, "md") }}<span class="grow"><b>{{ e.college }}{{ vtick(e.verification) }}</b><br><small class="muted">{{ e.city or "" }}</small></span>{{ icon("right", "ico sm") }}</a>
+    </aside>
+  </div>
+
+  {% if posts %}
+  <section class="reveal" style="margin-top:22px"><h2>Posts</h2><div class="pgrid">{% for p in posts %}{{ grid_tile(p) }}{% endfor %}</div></section>
+  {% endif %}
+</div>
+
+{% if student and is_open %}
+<div class="mobile-cta fest-cta" data-cta>
+  <div class="grow"><b data-cta-total>Pick events</b><small data-cta-count>{{ subs|length }} events · pay once</small></div>
+  <a class="btn brand" href="#register" data-cta-go>Continue</a>
+</div>
+{% elif not g.user %}
+<div class="mobile-cta" data-cta><div class="grow"><b>{{ subs|length }} events</b><small>{{ e.start_dt|dt("%d %b") }} · {{ e.city or e.venue }}</small></div><a class="btn brand" href="{{ url_for('auth.login', next=request.path) }}">Log in</a></div>
+{% endif %}
+
+{% if friends_list %}
+<div class="modal" id="share-friends" hidden>
+  <form class="modal-card" data-share-friends="{{ e.id }}">
+    <button class="iconbtn x" type="button" data-modal-close aria-label="Close">{{ icon("x") }}</button>
+    <h3>Send to friends</h3>
+    <div style="max-height:320px;overflow:auto">{% for f in friends_list %}<label class="check suggest" style="margin:0"><input type="checkbox" name="to" value="{{ f.id }}">{{ avatar(f.name, f.avatar, "sm") }}<span><b>{{ f.name }}</b><small>@{{ f.username }}</small></span></label>{% endfor %}</div>
+    <button class="btn brand block" style="margin-top:14px" data-noload>{{ icon("send", "ico sm") }}Send</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

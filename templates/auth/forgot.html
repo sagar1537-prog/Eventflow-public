@@ -1,0 +1,19 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Reset password{% endblock %}
+{% block art %}<h2>Locked out? It happens.</h2><p>We'll get you back to your tickets in a minute.</p>{% endblock %}
+{% block form %}
+<h1>Reset your password</h1>
+<p class="muted">Enter your email, username or mobile number.</p>
+<form method="post" style="margin-top:18px">
+  {{ csrf_field() }}
+  <div class="field"><label for="identifier">Email, username or mobile</label><input id="identifier" name="identifier" required autofocus></div>
+  <button class="btn brand lg block" type="submit">Create reset link</button>
+</form>
+{% if sent %}
+<div class="card" style="margin-top:20px">
+  <b>Check your inbox</b>
+  <p class="small muted mb-0">If that account exists, a reset link is on its way. This copy of EventFlow has no email server, so the link is printed in the EventFlow server window instead. The developer can also set a temporary password from Developer → Users.</p>
+</div>
+{% endif %}
+<p class="center" style="margin-top:18px"><a class="link" href="{{ url_for('auth.login') }}">Back to log in</a></p>
+{% endblock %}

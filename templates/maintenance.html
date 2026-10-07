@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Back soon{% endblock %}
+{% block shell %}
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="page narrow center" style="padding-top:18vh">
+  <span class="brand" style="justify-content:center"><span class="brand-mark"><i></i></span><span class="brand-text">EventFlow</span></span>
+  <h1>We're tuning things up</h1>
+  <p class="muted-2">EventFlow is in maintenance for a few minutes. Your tickets are safe. Please check back shortly.</p>
+  <a class="btn ghost" href="{{ url_for('auth.login') }}">Team login</a>
+</div>
+{% endblock %}
+{% block assistant %}{% endblock %}

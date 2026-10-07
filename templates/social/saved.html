@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, event_card, grid_tile, empty with context %}
+{% block title %}Saved{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Saved</h1><p>Only you can see what you've saved.</p></div></div>
+  <nav class="tabs">
+    <a class="{{ 'on' if tab == 'events' }}" href="?tab=events">Events <span class="n">{{ events|length }}</span></a>
+    <a class="{{ 'on' if tab == 'posts' }}" href="?tab=posts">Posts <span class="n">{{ posts|length }}</span></a>
+  </nav>
+  {% if tab == 'events' %}
+    {% if events %}<div class="ecards">{% for e in events %}{{ event_card(e, going.get(e.id), True) }}{% endfor %}</div>
+    {% else %}{{ empty("🔖", "No saved events", "Tap the bookmark on any event to keep it here.", url_for('social.explore'), "Explore events") }}{% endif %}
+  {% else %}
+    {% if posts %}<div class="pgrid" style="max-width:900px">{% for p in posts %}{{ grid_tile(p) }}{% endfor %}</div>
+    {% else %}{{ empty("🔖", "No saved posts", "Tap the bookmark under any post to save it.") }}{% endif %}
+  {% endif %}
+</div>
+{% endblock %}

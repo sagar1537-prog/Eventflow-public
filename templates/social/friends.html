@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, empty with context %}
+{% block title %}Friends{% endblock %}
+{% block content %}
+<div class="page page-enter">
+  <div class="head-row"><div><h1>Friends</h1><p>Go to events together. Friends can see each other's events and message each other.</p></div></div>
+  <nav class="tabs">
+    {% for key, label in [("friends", "Your friends"), ("requests", "Requests"), ("sent", "Sent"), ("suggestions", "Suggestions")] %}
+    <a class="{{ 'on' if tab == key }}" href="?tab={{ key }}">{{ label }} {% if lists[key] %}<span class="n">{{ lists[key]|length }}</span>{% endif %}</a>
+    {% endfor %}
+  </nav>
+  {% set people = lists[tab] %}
+  {% if people %}
+  <div class="people">
+    {% for p in people %}
+    <div class="person-card reveal lift">
+      <a href="{{ url_for('social.profile', username=p.username) }}">{{ avatar(p.name, p.avatar, "lg") }}</a>
+      <a href="{{ url_for('social.profile', username=p.username) }}"><b>{{ p.name }}</b></a>
+      <small>@{{ p.username }}{% if p.college_name %} · {{ p.college_name }}{% endif %}</small>
+      {% if tab == 'suggestions' and p.mutual %}<small>{{ p.mutual }} mutual friend{{ 's' if p.mutual != 1 }}</small>{% endif %}
+      {% if tab == 'requests' %}<small>{{ p.requested_at|rel }} ago</small>{% endif %}
+      <div class="row" style="justify-content:center" data-friend-box="{{ 'remove-card' if tab in ('requests', 'sent') else '' }}">
+        {% if tab == 'friends' %}
+          <a class="btn ghost sm" href="{{ url_for('social.messages', username=p.username) }}">Message</a>
+          <button class="btn soft sm" data-friend="{{ p.id }}:remove" type="button" title="Remove friend">Remove</button>
+        {% elif tab == 'requests' %}
+          <button class="btn brand sm" data-friend="{{ p.id }}:accept" type="button">Accept</button>
+          <button class="btn ghost sm" data-friend="{{ p.id }}:decline" type="button">Decline</button>
+        {% elif tab == 'sent' %}
+          <button class="btn soft sm" data-friend="{{ p.id }}:cancel" type="button">Cancel request</button>
+        {% else %}
+          <button class="btn brand sm" data-friend="{{ p.id }}:request" type="button">Add friend</button>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+    {% if tab == 'friends' %}{{ empty("🤝", "No friends yet", "Find classmates and people from other colleges.", url_for('social.friends', tab='suggestions'), "See suggestions") }}
+    {% elif tab == 'requests' %}{{ empty("📭", "No requests right now", "When someone adds you, it shows up here.") }}
+    {% elif tab == 'sent' %}{{ empty("✉️", "Nothing pending", "Requests you send show up here until they're answered.") }}
+    {% else %}{{ empty("🔭", "No suggestions yet", "Search for people on Explore.", url_for('social.explore', tab='people'), "Search people") }}{% endif %}
+  {% endif %}
+</div>
+{% endblock %}

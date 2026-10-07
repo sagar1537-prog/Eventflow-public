@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, empty with context %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page narrow page-enter">
+  <a class="link small" href="{{ url_for('social.profile', username=back.username) }}">Back to {{ back.name }}</a>
+  <h1 style="margin-top:10px">{{ title }}</h1>
+  <div class="card flush">
+    {% for p in people %}
+    <a class="nitem" href="{{ url_for('social.profile', username=p.username) }}">{{ avatar(p.name, p.avatar, "md") }}<span class="txt"><b>{{ p.name }}</b><br><small class="muted">@{{ p.username }}</small></span></a>
+    {% else %}{{ empty("👀", "No followers yet", "Share the profile to get the first followers.") }}{% endfor %}
+  </div>
+</div>
+{% endblock %}

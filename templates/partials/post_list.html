@@ -1,0 +1,3 @@
+{% from "partials/macros.html" import post_card with context %}
+{% for p in posts %}{{ post_card(p) }}{% endfor %}
+{% if has_more %}<i data-next-page="{{ page + 1 }}" hidden></i>{% endif %}

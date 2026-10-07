@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon with context %}
+{% block title %}Platform · Developer{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Platform settings</h1><p>Switches that change EventFlow for everyone.</p></div></div>
+  {% include "dev/_nav.html" %}
+  <div class="cols-2">
+    <form class="card pad-lg" method="post">
+      {{ csrf_field() }}
+      <h3>Controls</h3>
+      {% for key, title, text in [
+        ("signups_open", "Student sign-ups", "Let new students create accounts."),
+        ("college_signups_open", "College sign-ups", "Let new colleges register."),
+        ("demo_payments", "Demo payments", "Show the instant 'Pay (demo)' button at checkout. Turn off before going live."),
+        ("require_verified_to_publish", "Verified colleges only", "Only verified colleges can open registrations."),
+        ("maintenance", "Maintenance mode", "Everyone except you sees a 'back soon' page.")] %}
+      <div class="setting-row"><div><b>{{ title }}</b><small>{{ text }}</small></div>
+        <label class="switch"><input type="checkbox" name="{{ key }}" {{ 'checked' if setting(key) == '1' }}><span></span></label></div>
+      {% endfor %}
+      <div class="setting-row"><div><b>Platform fee</b><small>Percentage EventFlow earns on each paid ticket.</small></div>
+        <div class="row nw"><input name="platform_fee_pct" type="number" min="0" max="30" step="0.5" value="{{ setting('platform_fee_pct') }}" style="width:90px">%</div></div>
+      <div class="field" style="margin-top:14px"><label for="banner_text">Site-wide banner <span class="hint">shown at the top of every page, leave empty to hide</span></label>
+        <input id="banner_text" name="banner_text" value="{{ setting('banner_text') }}" maxlength="200" placeholder="🎉 Rhythm Night passes are live!"></div>
+      <button class="btn brand">Save settings</button>
+    </form>
+    <div class="stack-lg">
+      <form class="card pad-lg" method="post" action="{{ url_for('dev.broadcast') }}">
+        {{ csrf_field() }}
+        <h3>Broadcast a notification</h3>
+        <p class="muted small">Lands in everyone's notifications instantly.</p>
+        <div class="field"><textarea name="text" maxlength="280" required placeholder="EventFlow will be down for 10 minutes tonight at 11 PM."></textarea></div>
+        <div class="field"><div class="seg">{% for v, l in [("all", "Everyone"), ("students", "Students"), ("colleges", "Colleges")] %}<label><input type="radio" name="audience" value="{{ v }}" {{ 'checked' if loop.first }}>{{ l }}</label>{% endfor %}</div></div>
+        <button class="btn">{{ icon("megaphone", "ico sm") }}Send broadcast</button>
+      </form>
+      <div class="card pad-lg">
+        <h3>System</h3>
+        <div class="kv">
+          <div><small>Database</small><b>{{ config.get('DB_LABEL', 'SQLite') }}</b></div><div><small>AI engine</small><b>{{ "Claude API" if config.get('AI_MODE') == 'llm' else "Built-in, or Claude with a key" }}</b></div>
+          <div><small>Uploads stored in</small><b>{{ "the database" if config.get('DB_BACKEND') == 'postgres' else "instance/uploads" }}</b></div><div><small>Health check</small><b><a class="link" href="{{ url_for('healthz') }}">/healthz</a></b></div>
+        </div>
+        <p class="tiny muted mb-0">{% if config.get('DB_BACKEND') == 'postgres' %}Everything, including uploaded photos and files, is kept in PostgreSQL, so restarts and redeploys lose nothing.{% else %}Back up by copying the <code>instance</code> folder while the app is stopped.{% endif %}</p>
+      </div>
+      <form class="card pad-lg" method="post" action="{{ url_for('dev.reset_demo') }}">
+        {{ csrf_field() }}
+        <h3>Reset demo data</h3>
+        <p class="muted small">Deletes every event, post, registration, payment, message and upload, and restores the clean demo accounts. Use it right before a live demo. This can't be undone.</p>
+        <div class="field"><label for="confirm">Type <b>RESET</b> to confirm</label><input id="confirm" name="confirm" autocomplete="off" placeholder="RESET" required></div>
+        <button class="btn danger">Reset to clean demo</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

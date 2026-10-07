@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, status_pill, empty with context %}
+{% block title %}{{ e.title }} · Studio{% endblock %}
+{% block content %}
+{% set back_url = url_for('studio.event', eid=e.id) ~ '#payments' %}
+<div class="page wide page-enter">
+  <div class="head-row">
+    <div class="row nw" style="gap:16px">
+      <span class="av av-xl sq" style="--h:{{ e.title|hue }};border-radius:20px">{% if e.banner %}<img src="{{ url_for('media', rel=e.banner) }}" alt="">{% else %}🎪{% endif %}</span>
+      <div><h1>{{ e.title }}</h1>
+        <p class="row" style="gap:8px">{{ status_pill(e.status) }}<span class="pill fest">🎪 Fest</span><span>{{ e.start_dt|dt("%a %d %b") }}{% if e.start_dt[:10] != e.end_dt[:10] %} – {{ e.end_dt|dt("%a %d %b") }}{% endif %} · {{ e.venue }}</span></p></div>
+    </div>
+    <div class="row">
+      <a class="btn brand" href="{{ url_for('studio.checkin', eid=e.id) }}">{{ icon("scan", "ico sm") }}Fest check-in</a>
+      <a class="btn ghost" href="{{ url_for('events.detail', eid=e.id) }}">{{ icon("eye", "ico sm") }}View page</a>
+      {% if lead %}<a class="btn ghost" href="{{ url_for('studio.event_edit', eid=e.id) }}">{{ icon("edit", "ico sm") }}Edit fest</a>{% endif %}
+      {% if g.user.role == 'college' %}<a class="btn ghost" href="{{ url_for('social.post_new', event=e.id) }}">{{ icon("image", "ico sm") }}Post</a>{% endif %}
+    </div>
+  </div>
+  {% include "studio/_nav.html" %}
+
+  <div class="kpis">
+    <div class="kpi"><span>Participants</span><b data-count="{{ kpis.participants }}">{{ kpis.participants }}</b><small>{{ kpis.registrations }} tickets across {{ kpis.events }} events</small></div>
+    <div class="kpi"><span>Checked in</span><b data-count="{{ kpis.checked_in }}">{{ kpis.checked_in }}</b><small>at any event desk</small></div>
+    <div class="kpi {{ 'hl' if kpis.review }}"><span>Payments to verify</span><b>{{ kpis.review }}</b><small>orders are approved together</small></div>
+    <div class="kpi dark"><span>Collected</span><b data-count="{{ kpis.revenue }}" data-prefix="₹">{{ kpis.revenue|inr }}</b><small>all events</small></div>
+  </div>
+
+  <nav class="tabs" data-panes>
+    <a href="#events">Tracks &amp; events <span class="n">{{ kpis.events }}</span></a>
+    <a href="#payments">Payments {% if kpis.review %}<span class="n" style="background:var(--rose);color:#fff">{{ kpis.review }}</span>{% endif %}</a>
+    <a href="#updates">Updates</a>
+  </nav>
+
+  <section class="tab-pane" id="events">
+    <div class="stack-lg">
+      {% for gr in groups %}{% set t = gr.t %}
+      <section class="track-card studio-track">
+        <header class="track-head">
+          <span class="track-emoji">{{ t.emoji }}</span>
+          <div class="grow"><h2>{{ t.name }}</h2><p>{% if t.pricing == 'pass' %}One pass: <b>{{ t.pass_fee|inr if t.pass_fee else "Free" }}</b> covers every event here{% else %}Each event has its own fee{% endif %} · {{ gr["items"]|length }} events</p></div>
+          {% if lead and t.id %}<button class="btn ghost sm" type="button" data-modal-open="track-{{ t.id }}">{{ icon("edit", "ico sm") }}Pricing</button>{% endif %}
+        </header>
+        <div class="table-wrap" style="border:0;border-radius:0">
+          <table class="data">
+            <thead><tr><th>Event</th><th class="r">Fee</th><th class="r">Team</th><th class="r">Registered</th><th class="r">Checked in</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            {% for it in gr["items"] %}{% set s = it.e %}
+              <tr>
+                <td><b>{{ s.title }}</b>{% if s.label %} <span class="pill soft">{{ s.label }}</span>{% endif %}<br><small class="muted">{{ s.start_dt|dt("%a %d %b, %I:%M %p") }} · {{ s.venue }}</small></td>
+                <td class="r">{% if t.pricing == 'pass' %}<span class="muted">pass</span>{% elif s.fee %}{{ s.fee|inr }}{% if s.fee_type == 'team' %}<small class="muted">/team</small>{% endif %}{% else %}Free{% endif %}</td>
+                <td class="r">{{ "Solo" if s.team_size == 1 else "≤ " ~ s.team_size }}</td>
+                <td class="r"><b>{{ s.reg_count }}</b><small class="muted"> / {{ s.capacity }}</small>{% if s.review_count %}<br><span class="pill amber">{{ s.review_count }} to verify</span>{% endif %}</td>
+                <td class="r">{{ s.att_count }}</td>
+                <td>{{ status_pill(s.status) }}</td>
+                <td class="nowrap"><a class="btn ghost sm" href="{{ url_for('studio.event', eid=s.id) }}">Manage</a> {% if lead %}<a class="btn ghost sm icon" href="{{ url_for('studio.event_edit', eid=s.id) }}" aria-label="Edit {{ s.title }}">{{ icon("edit", "ico sm") }}</a>{% endif %}</td>
+              </tr>
+            {% else %}<tr><td colspan="7" class="muted">No events in this track yet.</td></tr>{% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if lead and t.id %}
+        <details class="add-sub">
+          <summary>{{ icon("plus", "ico sm") }}Add an event to {{ t.name }}</summary>
+          <form method="post" action="{{ url_for('studio.sub_add', eid=e.id) }}" class="add-sub-form">
+            {{ csrf_field() }}<input type="hidden" name="track_id" value="{{ t.id }}">
+            <div class="field"><label>Event name</label><input name="title" required maxlength="120" placeholder="e.g. Tech Quiz"></div>
+            <div class="grid-3">
+              {% if t.pricing == 'event' %}<div class="field"><label>Fee (₹)</label><input name="fee" type="number" min="0" value="0"></div>
+              <div class="field"><label>Fee is</label><select name="fee_type"><option value="person">Per person</option><option value="team">Per team</option></select></div>{% endif %}
+              <div class="field"><label>Team size</label><select name="team_size">{% for n in range(1, 16) %}<option value="{{ n }}">{{ "Solo" if n == 1 else "Up to " ~ n }}</option>{% endfor %}</select></div>
+              <div class="field"><label>Seats</label><input name="capacity" type="number" min="1" value="100"></div>
+              <div class="field"><label>Category</label><select name="category">{% for c in CATS %}<option {{ 'selected' if c == (gr["items"][0].e.category if gr["items"] else 'Technical') }}>{{ c }}</option>{% endfor %}</select></div>
+              <div class="field"><label>Tag <span class="hint">(optional)</span></label><input name="label" maxlength="40" placeholder="Boys only"></div>
+            </div>
+            <button class="btn brand">{{ icon("plus", "ico sm") }}Add event</button>
+            <p class="tiny muted mb-0">Uses the fest's dates and venue. Open it afterwards to change its time, venue or banner.</p>
+          </form>
+        </details>
+        {% endif %}
+      </section>
+
+      {% if lead and t.id %}
+      <div class="modal" id="track-{{ t.id }}" hidden>
+        <form class="modal-card" method="post" action="{{ url_for('studio.track_save', eid=e.id) }}">
+          <button class="iconbtn x" type="button" data-modal-close aria-label="Close">{{ icon("x") }}</button>
+          {{ csrf_field() }}<input type="hidden" name="track_id" value="{{ t.id }}">
+          <h3>Edit {{ t.name }}</h3>
+          <div class="grid-2"><div class="field"><label>Name</label><input name="name" value="{{ t.name }}" required maxlength="60"></div>
+            <div class="field"><label>Emoji</label><input name="emoji" value="{{ t.emoji }}" maxlength="4"></div></div>
+          <div class="field"><label>One-liner</label><input name="blurb" value="{{ t.blurb or '' }}" maxlength="200"></div>
+          <div class="field"><label>Pricing</label>
+            <div class="seg"><label><input type="radio" name="pricing" value="event" {{ 'checked' if t.pricing == 'event' }}>Fee per event</label><label><input type="radio" name="pricing" value="pass" {{ 'checked' if t.pricing == 'pass' }}>One pass for all</label></div></div>
+          <div class="field"><label>Pass fee (₹) <span class="hint">used when “One pass for all” is on</span></label><input name="pass_fee" type="number" min="0" value="{{ t.pass_fee }}"></div>
+          <button class="btn brand block">Save</button>
+          {% if not gr["items"] %}<button class="btn danger block" style="margin-top:8px" type="submit" form="del-track-{{ t.id }}">Delete this track</button>{% endif %}
+        </form>
+        {% if not gr["items"] %}<form id="del-track-{{ t.id }}" method="post" action="{{ url_for('studio.track_delete', tid=t.id) }}" data-confirm="Delete the {{ t.name }} track?">{{ csrf_field() }}</form>{% endif %}
+      </div>
+      {% endif %}
+      {% else %}
+      {{ empty("🎪", "No tracks yet", "Add a track like “Technical events”, then add its events.") }}
+      {% endfor %}
+
+      {% if lead %}
+      <form class="card pad-lg" method="post" action="{{ url_for('studio.track_save', eid=e.id) }}">
+        {{ csrf_field() }}<h3>Add a track</h3>
+        <p class="muted small">A track groups events, like Technical, Non-technical or Sports, and decides how they're priced.</p>
+        <div class="grid-3">
+          <div class="field"><label>Name</label><input name="name" required maxlength="60" placeholder="Cultural events"></div>
+          <div class="field"><label>Emoji</label><input name="emoji" maxlength="4" value="🎭"></div>
+          <div class="field"><label>Pass fee (₹)</label><input name="pass_fee" type="number" min="0" value="0"></div>
+        </div>
+        <div class="field"><label>Pricing</label><div class="seg"><label><input type="radio" name="pricing" value="event" checked>Fee per event</label><label><input type="radio" name="pricing" value="pass">One pass for all events</label></div></div>
+        <button class="btn brand">{{ icon("plus", "ico sm") }}Add track</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="tab-pane" id="payments">
+    <p class="muted-2">A student who picks several events pays once. Approving or rejecting one order covers all of its events.</p>
+    {% if orders %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Participant</th><th>Events</th><th class="r">Amount</th><th>UTR</th><th>Proof</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        {% for o in orders %}{% set p = o.head %}
+          <tr>
+            <td class="person"><span><b>{{ p.name }}</b><small>@{{ p.username }}{% if p.phone %} · {{ p.phone }}{% endif %} · {{ p.created_at|rel }}</small></span></td>
+            <td><small>{{ o.events|join(", ") }}</small></td>
+            <td class="r"><b>{{ o.total|inr }}</b></td>
+            <td class="num">{{ p.utr or "—" }}</td>
+            <td>{% if p.screenshot %}<a class="link small" href="{{ url_for('media', rel=p.screenshot) }}" target="_blank" rel="noopener">Screenshot</a>{% else %}—{% endif %}</td>
+            <td>{% if o.status == 'submitted' %}<span class="pill amber">To verify</span>{% elif o.status == 'paid' %}<span class="pill green">Paid</span>{% else %}<span class="pill blue">Refund due</span>{% endif %}</td>
+            <td class="nowrap">
+              {% if o.status == 'submitted' and lead %}
+                <form method="post" action="{{ url_for('studio.payment_action', pid=p.id, action='approve') }}" style="display:inline">{{ csrf_field() }}<input type="hidden" name="next" value="{{ back_url }}"><button class="btn success sm">Approve</button></form>
+                <form method="post" action="{{ url_for('studio.payment_action', pid=p.id, action='reject') }}" style="display:inline" data-confirm="Reject this order? The participant will be asked to pay again.">{{ csrf_field() }}<input type="hidden" name="next" value="{{ back_url }}"><button class="btn danger sm">Reject</button></form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}{{ empty("💳", "No payments yet", "Orders show up here as students register.") }}{% endif %}
+  </section>
+
+  <section class="tab-pane" id="updates">
+    <div class="cols-2">
+      {% if lead %}
+      <form class="card pad-lg" method="post" action="{{ url_for('studio.announce', eid=e.id) }}">
+        {{ csrf_field() }}<h3>Send an update to everyone</h3>
+        <p class="muted small">Goes to the fest page and notifies every participant of every event.</p>
+        <div class="field"><label for="a-title">Headline</label><input id="a-title" name="title" required maxlength="120" placeholder="Sports fixtures are out"></div>
+        <div class="field"><label for="a-body">Message</label><textarea id="a-body" name="body" required></textarea></div>
+        <label class="check"><input type="checkbox" name="important"> Mark as important</label>
+        <button class="btn brand">{{ icon("megaphone", "ico sm") }}Publish update</button>
+      </form>
+      {% endif %}
+      <section class="card pad-lg">
+        <h3>Published</h3>
+        {% for a in news %}
+        <div class="note {{ 'important' if a.priority == 'important' }}"><span class="bar"></span><div class="grow"><b>{{ a.title }}</b><p>{{ a.body }}</p><span class="tiny muted">{{ a.created_at|rel }}{% if a.author %} · {{ a.author }}{% endif %}</span></div>
+          {% if lead %}<form method="post" action="{{ url_for('studio.announce_delete', aid=a.id) }}" data-confirm="Delete this update?">{{ csrf_field() }}<button class="iconbtn" aria-label="Delete">{{ icon("trash", "ico sm") }}</button></form>{% endif %}</div>
+        {% else %}<p class="muted">No updates yet.</p>{% endfor %}
+      </section>
+    </div>
+  </section>
+</div>
+{% endblock %}

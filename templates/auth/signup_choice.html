@@ -1,0 +1,18 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Join EventFlow{% endblock %}
+{% block art %}<h2>Every college event. Every student. One place.</h2><p>Colleges get participants. Students get a social life with a calendar.</p>{% endblock %}
+{% block form %}
+<h1>Join EventFlow</h1>
+<p class="muted">Pick the kind of account you need.</p>
+<div class="choice-cards">
+  <a class="choice-card" href="{{ url_for('auth.signup_student') }}">
+    <span class="e">🎓</span><h3>I'm a student</h3>
+    <ul><li>Discover events across colleges</li><li>Register and pay in seconds</li><li>Add friends and go together</li></ul>
+  </a>
+  <a class="choice-card" href="{{ url_for('auth.signup_college') }}">
+    <span class="e">🏛️</span><h3>I run a college</h3>
+    <ul><li>Post invitations, photos and videos</li><li>Collect UPI payments</li><li>Full admin dashboard per event</li></ul>
+  </a>
+</div>
+<p class="center muted" style="margin-top:22px">Already have an account? <a class="link" href="{{ url_for('auth.login') }}">Log in</a></p>
+{% endblock %}

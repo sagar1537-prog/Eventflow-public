@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, empty with context %}
+{% block title %}Posts · Studio{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Posts</h1><p>How your posts are doing.</p></div><a class="btn brand" href="{{ url_for('social.post_new') }}">{{ icon("plus", "ico sm") }}New post</a></div>
+  {% include "studio/_nav.html" %}
+  {% if rows %}
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Post</th><th>Event</th><th class="r">Likes</th><th class="r">Comments</th><th class="r">Saves</th><th>Posted</th><th></th></tr></thead>
+      <tbody>
+      {% for p in rows %}
+        <tr>
+          <td><a class="row nw" href="{{ url_for('social.post_view', pid=p.id) }}"><span class="av av-md sq" style="--h:{{ p.id * 37 }}">{% if p.thumb %}<img src="{{ url_for('media', rel=p.thumb) }}" alt="">{% else %}{{ icon("file", "ico sm") }}{% endif %}</span>
+            <span class="ellipsis" style="max-width:320px">{{ (p.caption or "(no caption)")[:90] }}</span></a></td>
+          <td>{{ p.event_title or "—" }}</td>
+          <td class="r">{{ p.likes }}</td><td class="r">{{ p.comments }}</td><td class="r">{{ p.saves }}</td>
+          <td class="nowrap">{{ p.created_at|rel }}</td>
+          <td><form method="post" action="{{ url_for('social.post_delete', pid=p.id) }}" data-confirm="Delete this post?">{{ csrf_field() }}<button class="iconbtn" aria-label="Delete post">{{ icon("trash", "ico sm") }}</button></form></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}{{ empty("📸", "No posts yet", "Posters, teasers and rulebooks bring people to your events.", url_for('social.post_new'), "Create a post") }}{% endif %}
+</div>
+{% endblock %}

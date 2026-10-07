@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, post_card, empty with context %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<div class="feed-wrap page-enter">
+  <div>
+    <div class="searchbar show-sm search-wrap">{{ icon("search") }}<input type="search" placeholder="Search events, colleges, people" data-search aria-label="Search"></div>
+    {% if stories %}
+    <div class="stories" aria-label="Upcoming events from colleges you follow">
+      {% for s in stories %}
+      <button class="story" type="button" aria-label="{{ s.title }}">
+        <span class="av-ring">{{ avatar(s.college, s.avatar_path, "lg") }}</span><span>{{ s.title }}</span>
+      </button>
+      {% endfor %}
+    </div>
+    <script type="application/json" id="story-data">{{ stories|tojson }}</script>
+    {% endif %}
+
+    {% if next_ticket %}
+    <a class="post-cta reveal" href="{{ url_for('events.ticket', code=next_ticket.pass_code) }}" style="margin:0 0 20px;background:var(--surface);border-color:var(--line)">
+      <span class="date"><b>{{ next_ticket.start_dt|day }}</b><small>{{ next_ticket.start_dt|mon }}</small></span>
+      <span class="grow"><b>Next up: {{ next_ticket.title }}</b><small>{{ next_ticket.start_dt|until }}, {{ next_ticket.start_dt|time }}{% if next_ticket.slot_start %} · your slot {{ next_ticket.slot_start|time }}, {{ next_ticket.slot_venue }}{% else %} · {{ next_ticket.venue }}{% endif %}</small></span>
+      <span class="btn sm">{{ icon("qr", "ico sm") }}Ticket</span>
+    </a>
+    {% endif %}
+
+    {% if suggested and posts %}
+    <div class="card reveal quiet-card"><div><b>Your feed is quiet.</b><p class="muted small mb-0">Follow colleges to see their posts here. Meanwhile, here's what's new across EventFlow.</p></div>
+      <a class="btn brand sm" href="{{ url_for('social.explore', tab='colleges') }}">Find colleges</a></div>
+    {% endif %}
+
+    {% for p in posts %}{{ post_card(p) }}{% else %}
+      {{ empty("🌱", "No posts yet", "When colleges announce events, their posts land right here.", url_for('social.explore'), "Explore events") }}
+    {% endfor %}
+    {% if has_more %}<div data-load-more="{{ page + 1 }}"></div>{% elif posts %}<p class="center muted small" style="padding:20px">You're all caught up ✨</p>{% endif %}
+  </div>
+
+  <aside class="rail">
+    <a class="me-chip" href="{{ url_for('social.profile', username=g.user.username) }}" style="padding:4px 0">
+      {{ avatar(g.user.name, g.user.avatar, "md") }}<span class="grow"><b>{{ g.user.name }}{{ vtick(g.user.verification) }}</b><small>@{{ g.user.username }}</small></span>
+    </a>
+    <div class="search-wrap" style="position:relative"><input type="search" placeholder="Search EventFlow  ( / )" data-search aria-label="Search" style="border-radius:14px"></div>
+    {% if trending %}
+    <div class="card">
+      <h4>Trending events</h4>
+      {% for e in trending %}
+      <a class="suggest" href="{{ url_for('events.detail', eid=e.id) }}">
+        <span class="av av-md sq" style="--h:{{ e.title|hue }}">{% if e.banner %}<img src="{{ url_for('media', rel=e.banner) }}" alt="">{% else %}{{ e.category|cat_emoji }}{% endif %}</span>
+        <span class="grow"><b class="ellipsis" style="display:block">{{ e.title }}</b><small>{{ e.start_dt|until }} · {{ e.taken }} going</small></span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if college_suggestions %}
+    <div class="card">
+      <h4>Colleges to follow</h4>
+      {% for c in college_suggestions %}
+      <div class="suggest">
+        <a href="{{ url_for('social.profile', username=c.username) }}">{{ avatar(c.name, c.avatar, "md") }}</a>
+        <a class="grow" href="{{ url_for('social.profile', username=c.username) }}"><b class="ellipsis" style="display:block">{{ c.name }}{{ vtick(c.verification) }}</b><small>{{ c.city }} · {{ c.followers }} followers</small></a>
+        <button class="btn brand sm" data-follow="{{ c.id }}" type="button">Follow</button>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if g.user.role == 'student' and people_suggestions %}
+    <div class="card">
+      <h4>People you may know</h4>
+      {% for p in people_suggestions %}
+      <div class="suggest">
+        <a href="{{ url_for('social.profile', username=p.username) }}">{{ avatar(p.name, p.avatar, "md") }}</a>
+        <a class="grow" href="{{ url_for('social.profile', username=p.username) }}"><b>{{ p.name }}</b><small>{% if p.mutual %}{{ p.mutual }} mutual friend{{ 's' if p.mutual != 1 }}{% else %}{{ p.college_name or p.department }}{% endif %}</small></a>
+        <span data-friend-box><button class="btn soft sm" data-friend="{{ p.id }}:request" type="button">Add</button></span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <p class="mini-foot">EventFlow · <a href="{{ url_for('social.explore') }}">Explore</a> · <a href="{{ url_for('social.settings') }}">Settings</a> · <button class="linkish" data-ask type="button">Ask the assistant</button></p>
+  </aside>
+</div>
+{% endblock %}

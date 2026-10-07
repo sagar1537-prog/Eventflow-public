@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon with context %}
+{% block title %}Certificate · {{ reg.title }}{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row no-print">
+    <div><h1>{{ "Certificate of achievement" if win else "Your certificate" }}</h1><p>Anyone can confirm it's genuine by scanning the QR code.</p></div>
+    <div class="row"><a class="btn ghost" href="{{ url_for('events.ticket', code=reg.pass_code) }}">Back to ticket</a>
+      <button class="btn ghost" data-share="{{ url_for('events.verify', code=reg.pass_code) }}" data-title="My certificate for {{ reg.title }}" type="button">{{ icon("share", "ico sm") }}Share</button>
+      <button class="btn brand" type="button" data-save-pdf="{{ (reg.title if reg is defined else p.title)|e }}">{{ icon("download", "ico sm") }}Save as PDF</button></div>
+  </div>
+  <div class="cert-scroller"><article class="certificate reveal {{ 'win' if win }}" aria-label="Certificate of {{ 'achievement' if win else 'participation' }}">
+    <span class="cert-corner a"></span><span class="cert-corner b"></span>
+    <div class="cert-in">
+      <div class="cert-top"><span class="brand"><span class="brand-mark"><i></i></span>EventFlow</span><span style="text-align:right">Certificate no. {{ reg.pass_code }}<br>{{ reg.college }}</span></div>
+      {% if win %}<div class="cert-medal">{{ {1: "🥇", 2: "🥈", 3: "🥉"}.get(win.position, "🏅") }}</div>{% endif %}
+      <div class="cert-title">Certificate of {{ "Achievement" if win else "Participation" }}</div>
+      <div class="cert-sub">This certifies that</div>
+      <div class="cert-name">{{ reg.name }}</div>
+      <p class="cert-text">{% if reg.college_name %}of <b>{{ reg.college_name }}</b>{% if reg.department %}, {{ reg.department }}{% endif %}, {% endif %}
+        {% if win %}secured <b>{{ win.title }}</b> in{% else %}participated in{% endif %} <b>{{ reg.title }}</b>, a {{ reg.category|lower }} event organised by <b>{{ reg.college }}</b> on
+        <b>{{ reg.start_dt|dt("%d %B %Y") }}</b> at {{ reg.venue }}{% if reg.team_name %}, as a member of team <b>{{ reg.team_name }}</b>{% endif %}.</p>
+      <div class="cert-foot">
+        <div class="cert-sign"><div class="sig">Event Coordinator</div><div class="line">Event Coordinator<small>{{ reg.title }}</small></div></div>
+        <div class="cert-qr">{{ verify_url|qr }}Scan to verify</div>
+        <div class="cert-sign"><div class="sig">{{ reg.college.split()[0] }}</div><div class="line">For {{ reg.college }}<small>Issued {{ (win.created_at if win else reg.checkin_time)|date }}</small></div></div>
+      </div>
+    </div>
+  </article></div>
+  <p class="cert-hint tiny muted no-print">Pinch to zoom in · tap “Save as PDF” for a full-size copy</p>
+</div>
+{% endblock %}

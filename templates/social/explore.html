@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, event_card, grid_tile, empty with context %}
+{% block title %}Explore{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  {% if welcome %}
+  <div class="card reveal" style="margin-bottom:18px;background:var(--brand-soft);border-color:transparent">
+    <b>Welcome to EventFlow, {{ g.user.name.split()[0] }}! 👋</b> <span class="muted-2">Follow a few colleges to build your feed. You can always find more here.</span>
+  </div>
+  {% endif %}
+  <form class="searchbar search-wrap" method="get" action="{{ url_for('social.explore') }}">
+    {{ icon("search") }}<input type="search" name="q" value="{{ qtext }}" placeholder="Search events, colleges, people, #tags" data-search aria-label="Search" autocomplete="off">
+    <input type="hidden" name="tab" value="{{ tab }}">
+  </form>
+  <nav class="tabs">
+    {% for key, label in [("events", "Events"), ("colleges", "Colleges"), ("people", "People"), ("posts", "Posts")] %}
+    <a class="{{ 'on' if tab == key }}" href="{{ url_for('social.explore', tab=key, q=qtext or None) }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  {% if tab == 'events' %}
+    {% if featured %}
+    <div class="featured">
+      {% for e in featured %}
+      <a class="feat" href="{{ url_for('events.detail', eid=e.id) }}">
+        {% if e.banner %}<img src="{{ url_for('media', rel=e.banner) }}" alt="">{% endif %}<span class="shade"></span>
+        <span class="txt"><span class="pill brand">★ Featured</span><h3>{{ e.title }}</h3><small>{{ e.college }} · {{ e.start_dt|dt("%a %d %b") }} · {{ "Free" if not e.fee else e.fee|inr }}</small></span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <form class="filters" method="get" id="filters">
+      <input type="hidden" name="tab" value="events"><input type="hidden" name="q" value="{{ qtext }}">
+      <input type="hidden" name="cat" value="{{ cat }}" id="cat-input">
+      <button class="chip {{ 'on' if not cat }}" type="submit" onclick="document.getElementById('cat-input').value=''" data-noload>All</button>
+      {% for c in CATEGORIES %}<button class="chip {{ 'on' if cat == c }}" type="submit" data-noload onclick="document.getElementById('cat-input').value='{{ c }}'">{{ c|cat_emoji }} {{ c }}</button>{% endfor %}
+      <select name="when" onchange="this.form.submit()" aria-label="When">
+        <option value="">Any date</option>{% for v, l in [("today", "Today"), ("week", "This week"), ("month", "This month")] %}<option value="{{ v }}" {{ 'selected' if when == v }}>{{ l }}</option>{% endfor %}</select>
+      <select name="price" onchange="this.form.submit()" aria-label="Price">
+        <option value="">Any price</option><option value="free" {{ 'selected' if price == 'free' }}>Free</option><option value="paid" {{ 'selected' if price == 'paid' }}>Paid</option></select>
+      <select name="sort" onchange="this.form.submit()" aria-label="Sort">
+        {% for v, l in [("soon", "Soonest"), ("popular", "Most popular"), ("new", "Newest"), ("price", "Lowest price")] %}<option value="{{ v }}" {{ 'selected' if sort == v }}>{{ l }}</option>{% endfor %}</select>
+      <input name="city" value="{{ city }}" placeholder="City" style="height:36px;width:130px;border-radius:999px" aria-label="City">
+    </form>
+    {% if events %}
+      <div class="ecards">{% for e in events %}{{ event_card(e, going.get(e.id), e.id in saved_ids) }}{% endfor %}</div>
+    {% else %}
+      {{ empty("🔍", "No events match", "Try a different category, date or city.", url_for('social.explore'), "Clear filters") }}
+    {% endif %}
+
+  {% elif tab == 'colleges' %}
+    <div class="people">
+      {% for c in colleges %}
+      <div class="person-card reveal lift">
+        <a href="{{ url_for('social.profile', username=c.username) }}">{{ avatar(c.name, c.avatar, "lg") }}</a>
+        <a href="{{ url_for('social.profile', username=c.username) }}"><b>{{ c.name }}{{ vtick(c.verification) }}</b></a>
+        <small>{{ c.city }} · <span data-followers="{{ c.id }}">{{ c.followers }}</span> followers · {{ c.events }} events</small>
+        {% if g.user and g.user.id != c.id %}
+          <button class="btn sm {{ 'ghost' if c.id in followed else 'brand' }}" data-follow="{{ c.id }}" type="button">{{ "Following" if c.id in followed else "Follow" }}</button>
+        {% elif not g.user %}<a class="btn brand sm" href="{{ url_for('auth.login') }}">Follow</a>{% endif %}
+      </div>
+      {% else %}{{ empty("🏛️", "No colleges found", "Try another name or city.") }}{% endfor %}
+    </div>
+
+  {% elif tab == 'people' %}
+    <div class="people">
+      {% for p in people %}
+      <div class="person-card reveal lift">
+        <a href="{{ url_for('social.profile', username=p.username) }}">{{ avatar(p.name, p.avatar, "lg") }}</a>
+        <a href="{{ url_for('social.profile', username=p.username) }}"><b>{{ p.name }}</b></a>
+        <small>@{{ p.username }}{% if p.college_name %} · {{ p.college_name }}{% endif %}</small>
+        {% if g.user and g.user.role == 'student' and g.user.id != p.id %}
+        {% set st = statuses.get(p.id) %}
+        <span data-friend-box>
+          {% if st == 'friends' %}<button class="btn ghost sm" data-friend="{{ p.id }}:remove" type="button">Friends ✓</button>
+          {% elif st == 'outgoing' %}<button class="btn soft sm" data-friend="{{ p.id }}:cancel" type="button">Requested</button>
+          {% elif st == 'incoming' %}<button class="btn brand sm" data-friend="{{ p.id }}:accept" type="button">Accept</button>
+          {% else %}<button class="btn brand sm" data-friend="{{ p.id }}:request" type="button">Add friend</button>{% endif %}
+        </span>
+        {% endif %}
+      </div>
+      {% else %}{{ empty("👋", "Nobody found", "Search by name, username, college or department.") }}{% endfor %}
+    </div>
+
+  {% else %}
+    {% if posts %}<div class="pgrid">{% for p in posts %}{{ grid_tile(p) }}{% endfor %}</div>
+    {% else %}{{ empty("🖼️", "No posts found", "Try a different word or #tag.") }}{% endif %}
+  {% endif %}
+</div>
+{% endblock %}

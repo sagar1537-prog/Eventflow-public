@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, empty with context %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+{% set kind_icon = {"friend_request": "👋", "friend_accept": "🤝", "follow": "➕", "post": "📸", "like": "❤️", "comment": "💬", "event": "🎟️",
+                    "slot": "⏰", "announcement": "📣", "payment": "💳", "verify": "✅", "team": "🧑‍💼", "report": "🚩", "broadcast": "📢", "message": "💬"} %}
+<div class="page narrow page-enter">
+  <div class="head-row"><div><h1>Notifications</h1></div></div>
+  {% if requests %}
+  <div class="card reveal" style="margin-bottom:18px">
+    <div class="card-head"><h3>Friend requests</h3><a class="link small" href="{{ url_for('social.friends', tab='requests') }}">See all</a></div>
+    {% for p in requests %}
+    <div class="suggest">
+      <a href="{{ url_for('social.profile', username=p.username) }}">{{ avatar(p.name, p.avatar, "md") }}</a>
+      <a class="grow" href="{{ url_for('social.profile', username=p.username) }}"><b>{{ p.name }}</b><small>@{{ p.username }}{% if p.college_name %} · {{ p.college_name }}{% endif %}</small></a>
+      <span class="row" data-friend-box="remove-card"><button class="btn brand sm" data-friend="{{ p.id }}:accept" type="button">Accept</button><button class="btn ghost sm" data-friend="{{ p.id }}:decline" type="button">Decline</button></span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% set ns = namespace(n=0) %}{% for label, items in groups %}{% set ns.n = ns.n + items|length %}{% endfor %}
+  {% if ns.n %}
+    {% for label, items in groups if items %}
+    <h3 style="margin:18px 0 6px">{{ label }}</h3>
+    <div class="nlist">
+      {% for n in items %}
+      <a class="nitem reveal {{ 'unread' if not n.is_read }}" href="{{ n.link or '#' }}">
+        {% if n.actor_name %}{{ avatar(n.actor_name, n.actor_avatar, "md") }}{% else %}<span class="kind">{{ kind_icon.get(n.kind, '🔔') }}</span>{% endif %}
+        <span class="txt">{{ n.text }}<small>{{ n.created_at|rel }}</small></span>
+        <span style="font-size:1.1rem">{{ kind_icon.get(n.kind, '') }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  {% else %}
+    {{ empty("🔔", "You're all caught up", "Likes, friend requests, slot updates and ticket news will appear here.") }}
+  {% endif %}
+</div>
+{% endblock %}

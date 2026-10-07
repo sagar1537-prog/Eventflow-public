@@ -1,0 +1,33 @@
+{% extends "auth/_layout.html" %}
+{% from "auth/_fields.html" import field %}
+{% block title %}Register your college{% endblock %}
+{% block art %}<h2>Fill every seat. Skip the spreadsheets.</h2><p>Post events, collect UPI payments, scan tickets and hand out certificates, all from your college studio.</p>{% endblock %}
+{% block form %}
+<h1>Register your college</h1>
+<p class="muted">Your account is the admin for all your events. You can add event leads later.</p>
+<form method="post" style="margin-top:18px" novalidate>
+  {{ csrf_field() }}
+  {{ field("name", "Institution name", errors, form, placeholder="e.g. Sunrise Institute of Technology", autocomplete="organization") }}
+  <div class="grid-2">
+    {{ field("username", "Handle", errors, form, placeholder="sunrise.tech", extra='pattern="[A-Za-z0-9_.]{3,30}"') }}
+    {{ field("city", "City", errors, form, placeholder="Chennai") }}
+  </div>
+  {{ field("email", "Official email", errors, form, type="email", placeholder="events@yourcollege.edu", autocomplete="email") }}
+  <div class="grid-2">
+    {{ field("phone", "Contact mobile", errors, form, type="tel", autocomplete="tel") }}
+    {{ field("upi_id", "UPI ID for payments", errors, form, required=False, placeholder="fest@okaxis", hint="(for paid events)") }}
+  </div>
+  {{ field("website", "Website", errors, form, type="url", required=False, placeholder="https://") }}
+  <div class="field"><label for="bio">About <span class="hint">(shown on your profile)</span></label>
+    <textarea id="bio" name="bio" maxlength="300" style="min-height:80px" placeholder="What your campus is known for">{{ form.get('bio', '') }}</textarea></div>
+  <div class="field {{ 'has-err' if errors.get('password') }}"><label for="password">Password</label>
+    <div class="pw-wrap"><input id="password" name="password" type="password" required autocomplete="new-password" data-strength="#pw-meter">
+      <button class="btn soft sm" type="button" data-pw-toggle data-noload>Show</button></div>
+    <div class="strength" id="pw-meter"><i></i></div>
+    {% if errors.get('password') %}<span class="err">{{ errors.password }}</span>{% endif %}</div>
+  <label class="check"><input type="checkbox" name="agree" {{ 'checked' if form.get('agree') }}> I'm authorised to represent this institution.</label>
+  {% if errors.get('agree') %}<span class="err small" style="color:var(--rose)">{{ errors.agree }}</span>{% endif %}
+  <p class="small muted">Your college gets a blue tick once the EventFlow team verifies it.</p>
+  <button class="btn brand lg block" type="submit">Create college account</button>
+</form>
+{% endblock %}

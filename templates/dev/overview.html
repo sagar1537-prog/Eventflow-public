@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick with context %}
+{% block title %}Developer console{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Developer console</h1><p>Hi {{ g.user.name.split()[0] }}. Everything happening on EventFlow, in one place.</p>
+    <span class="tk-team sm tk-reveal" style="margin-top:8px"><span class="knight" aria-hidden="true">♞&#xFE0E;</span><span class="muted">Team</span><span class="name">Tech-Knights</span></span></div>
+    <div class="row"><a class="btn ghost" href="{{ url_for('social.home', feed=1) }}">View app as feed</a><a class="btn brand" href="{{ url_for('dev.settings') }}">{{ icon("settings", "ico sm") }}Platform settings</a></div></div>
+  {% include "dev/_nav.html" %}
+  {% if setting('maintenance') == '1' %}<div class="verify-banner"><span style="font-size:1.4rem">🛠️</span><b>Maintenance mode is on.</b> Only you can use the app right now.</div>{% endif %}
+  <div class="kpis">
+    <div class="kpi reveal"><span>Students</span><b data-count="{{ k.students }}">{{ k.students }}</b><small>{{ k.active_today }} active today</small></div>
+    <div class="kpi reveal"><span>Colleges</span><b data-count="{{ k.colleges }}">{{ k.colleges }}</b><small>{{ k.verified }} verified</small></div>
+    <div class="kpi reveal"><span>Events</span><b data-count="{{ k.events }}">{{ k.events }}</b><small>{{ k.live }} open now</small></div>
+    <div class="kpi reveal"><span>Tickets</span><b data-count="{{ k.registrations }}">{{ k.registrations }}</b><small>confirmed registrations</small></div>
+    <div class="kpi hl reveal"><span>GMV</span><b data-count="{{ k.gmv }}" data-prefix="₹">{{ k.gmv|inr }}</b><small>paid through EventFlow</small></div>
+    <div class="kpi dark reveal"><span>Platform revenue</span><b data-count="{{ k.fees }}" data-prefix="₹">{{ k.fees|inr }}</b><small>at {{ setting('platform_fee_pct') }}% fee</small></div>
+  </div>
+  <div class="cols-2">
+    <section class="card reveal"><div class="card-head"><h3>Last 30 days</h3>
+      <div class="legend"><span><i style="--c:#4C6FFF"></i>Sign-ups</span><span><i style="--c:#E39A12"></i>Tickets</span></div></div>
+      <div class="chart"><canvas id="c-growth" role="img" aria-label="Sign-ups and tickets per day"></canvas></div></section>
+    <section class="card reveal"><div class="card-head"><h3>Community</h3></div>
+      <div class="kv">
+        <div><small>Posts</small><b>{{ k.posts }}</b></div><div><small>Messages sent</small><b>{{ k.messages }}</b></div>
+        <div><small>Friendships</small><b>{{ k.friendships }}</b></div><div><small>Open reports</small><b>{{ open_reports }}</b></div>
+        <div><small>Colleges awaiting review</small><b>{{ pending_colleges }}</b></div><div><small>Fee rate</small><b>{{ setting('platform_fee_pct') }}%</b></div>
+      </div>
+      <a class="btn soft block" href="{{ url_for('dev.colleges') }}">Review colleges</a></section>
+  </div>
+  <div class="cols-2">
+    <section class="reveal"><div class="card-head"><h3>Top colleges</h3></div>
+      <div class="table-wrap"><table class="data"><thead><tr><th>College</th><th class="r">Followers</th><th class="r">Events</th><th class="r">Tickets</th><th class="r">GMV</th></tr></thead>
+        <tbody>{% for c in top %}<tr><td><a class="person" href="{{ url_for('social.profile', username=c.username) }}">{{ avatar(c.name, c.avatar, "sm") }}<b>{{ c.name }}{{ vtick(c.verification) }}</b></a></td>
+          <td class="r">{{ c.followers }}</td><td class="r">{{ c.events }}</td><td class="r">{{ c.regs }}</td><td class="r">{{ c.gmv|inr }}</td></tr>{% endfor %}</tbody></table></div></section>
+    <section class="card reveal"><div class="card-head"><h3>Recent admin actions</h3><a class="link small" href="{{ url_for('dev.audit') }}">Full log</a></div>
+      {% for a in log %}<div class="note"><span class="bar"></span><div><b>{{ a.action }}</b><p>{{ a.detail }}</p><span class="tiny muted">{{ a.name or "System" }} · {{ a.created_at|rel }}</span></div></div>
+      {% else %}<p class="muted">Nothing yet.</p>{% endfor %}</section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/chart.umd.js') }}"></script>
+<script>
+(() => {
+  if (!window.Chart) return;
+  const d = {{ charts|tojson }}, css = getComputedStyle(document.documentElement);
+  Chart.defaults.font.family = '"Public Sans", system-ui, sans-serif';
+  Chart.defaults.color = css.getPropertyValue("--ink-3").trim();
+  new Chart(document.getElementById("c-growth"), { type: "line",
+    data: { labels: d.labels, datasets: [
+      { label: "Sign-ups", data: d.signups, borderColor: "#4C6FFF", backgroundColor: "rgba(76,111,255,.1)", fill: true, borderWidth: 2.5, cubicInterpolationMode: "monotone", pointRadius: 0, pointHoverRadius: 5 },
+      { label: "Tickets", data: d.regs, borderColor: "#E39A12", borderWidth: 2.5, cubicInterpolationMode: "monotone", pointRadius: 0, pointHoverRadius: 5 }] },
+    options: { maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: "#0F1424", padding: 10, cornerRadius: 10 } },
+      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { beginAtZero: true, grid: { color: css.getPropertyValue("--line-2").trim() }, border: { display: false }, ticks: { precision: 0 } } } } });
+})();
+</script>
+{% endblock %}

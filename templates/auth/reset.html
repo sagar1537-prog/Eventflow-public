@@ -1,0 +1,13 @@
+{% extends "auth/_layout.html" %}
+{% block title %}New password{% endblock %}
+{% block art %}<h2>Fresh start.</h2><p>Pick something you'll remember and nobody will guess.</p>{% endblock %}
+{% block form %}
+<h1>Choose a new password</h1>
+<form method="post" style="margin-top:18px">
+  {{ csrf_field() }}
+  <div class="field"><label for="password">New password</label><input id="password" name="password" type="password" required minlength="8" autocomplete="new-password" data-strength="#pw-meter">
+    <div class="strength" id="pw-meter"><i></i></div></div>
+  <div class="field"><label for="confirm">Confirm password</label><input id="confirm" name="confirm" type="password" required autocomplete="new-password"></div>
+  <button class="btn brand lg block" type="submit">Save password</button>
+</form>
+{% endblock %}

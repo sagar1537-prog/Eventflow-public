@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, status_pill with context %}
+{% block title %}Events · Developer{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Events</h1><p>Feature events on Explore, or take down anything that breaks the rules.</p></div></div>
+  {% include "dev/_nav.html" %}
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Event</th><th>College</th><th>When</th><th>Status</th><th class="r">Fee</th><th class="r">Tickets</th><th class="r">GMV</th><th></th></tr></thead>
+      <tbody>
+      {% for e in rows %}
+        <tr class="{{ 'muted-row' if e.is_removed }}">
+          <td><a href="{{ url_for('events.detail', eid=e.id) }}"><b>{{ e.title }}</b></a>{% if e.is_featured %} <span class="pill brand">★ Featured</span>{% endif %}{% if e.is_removed %} <span class="pill rose">Removed</span>{% endif %}</td>
+          <td><a class="link" href="{{ url_for('social.profile', username=e.username) }}">{{ e.college }}</a></td>
+          <td class="nowrap">{{ e.start_dt|dt("%d %b %Y") }}</td>
+          <td>{{ status_pill(e.status) }}</td>
+          <td class="r">{{ "Free" if not e.fee else e.fee|inr }}</td><td class="r">{{ e.regs }}</td><td class="r">{{ e.gmv|inr }}</td>
+          <td class="nowrap">
+            <form method="post" action="{{ url_for('dev.event_action', eid=e.id, action='feature') }}" style="display:inline">{{ csrf_field() }}<button class="btn ghost sm">{{ "Unfeature" if e.is_featured else "Feature" }}</button></form>
+            <form method="post" action="{{ url_for('dev.event_action', eid=e.id, action='remove') }}" style="display:inline" {% if not e.is_removed %}data-confirm="Take down {{ e.title }}?"{% endif %}>{{ csrf_field() }}<button class="btn sm {{ 'ghost' if e.is_removed else 'danger' }}">{{ "Restore" if e.is_removed else "Take down" }}</button></form>
+            <a class="btn ghost sm" href="{{ url_for('studio.event', eid=e.id) }}">Studio</a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

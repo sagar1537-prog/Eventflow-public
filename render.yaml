@@ -1,0 +1,28 @@
+# Render Blueprint: creates the EventFlow web app AND its PostgreSQL database in one go.
+# Render dashboard -> New -> Blueprint -> pick this repository -> Apply. Nothing else to configure.
+services:
+  - type: web
+    name: eventflow
+    runtime: python
+    plan: free
+    region: singapore              # closest Render region to India; change both regions together if you like
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 180 --bind 0.0.0.0:$PORT
+    healthCheckPath: /healthz
+    autoDeploy: true               # every push to GitHub redeploys automatically
+    envVars:
+      - key: DATABASE_URL          # EventFlow switches to PostgreSQL when this is set
+        fromDatabase:
+          name: eventflow-db
+          property: connectionString
+      - key: SECRET_KEY            # signs login sessions; Render generates a strong random value
+        generateValue: true
+      - key: TZ                    # Indian time (UTC+5:30) for event dates, slots and "today"
+        value: IST-5:30
+
+databases:
+  - name: eventflow-db
+    databaseName: eventflow
+    user: eventflow
+    plan: free
+    region: singapore

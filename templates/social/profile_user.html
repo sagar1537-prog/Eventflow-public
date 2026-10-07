@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, empty with context %}
+{% block title %}{{ u.name }}{% endblock %}
+{% block content %}
+<div class="page page-enter" style="max-width:900px">
+  <section class="user-hero">
+    <span class="{{ 'av-ring' if events }}">{{ avatar(u.name, u.avatar, "xxl") }}</span>
+    <div class="grow">
+      <h1>{{ u.name }}</h1>
+      <div class="muted">@{{ u.username }}{% if u.role == 'dev' %} · EventFlow developer{% endif %}</div>
+      {% if u.college_name or u.department %}<div class="muted-2" style="margin-top:4px">{{ u.department or "" }}{% if u.year %}, year {{ u.year }}{% endif %}{% if u.college_name %} · {{ u.college_name }}{% endif %}</div>{% endif %}
+      <div class="prof-stats" style="margin:14px 0 10px">
+        <div><b>{{ friend_count }}</b><span>friends</span></div>
+        <div><b>{{ attended }}</b><span>events attended</span></div>
+        <div><b>{{ following_count }}</b><span>colleges followed</span></div>
+      </div>
+      {% if pts %}<a class="level-chip" {% if is_me %}href="{{ url_for('social.points') }}"{% endif %}><span class="coin-sm">★</span><b>{{ pts.earned }}</b> pts<span class="sep"></span>{{ pts.level_emoji }} {{ pts.level }}</a>{% endif %}
+      {% if u.bio %}<p class="prose" style="max-width:520px">{{ u.bio|rich }}</p>{% endif %}
+      <div class="row">
+        {% if is_me %}
+          <a class="btn ghost" href="{{ url_for('social.settings') }}">Edit profile</a>
+          <a class="btn ghost" href="{{ url_for('events.tickets') }}">{{ icon("ticket", "ico sm") }}My tickets</a>
+        {% elif g.user and g.user.role == 'student' and u.role == 'student' %}
+          <span data-friend-box>
+            {% if status == 'friends' %}<button class="btn ghost" data-friend="{{ u.id }}:remove" type="button">Friends ✓</button>
+            {% elif status == 'outgoing' %}<button class="btn soft" data-friend="{{ u.id }}:cancel" type="button">Requested</button>
+            {% elif status == 'incoming' %}<button class="btn brand" data-friend="{{ u.id }}:accept" type="button">Accept request</button>
+            {% else %}<button class="btn brand" data-friend="{{ u.id }}:request" type="button">Add friend</button>{% endif %}
+          </span>
+        {% endif %}
+        {% if can_message %}<a class="btn ghost" href="{{ url_for('social.messages', username=u.username) }}">{{ icon("chat", "ico sm") }}Message</a>{% endif %}
+        <button class="btn ghost icon" data-share="{{ url_for('social.profile', username=u.username) }}" aria-label="Share profile" type="button">{{ icon("share", "ico sm") }}</button>
+      </div>
+      {% if mutual %}<p class="small muted" style="margin-top:10px"><span class="av-stack" style="display:inline-flex;vertical-align:middle">{% for f in mutual[:3] %}{{ avatar(f.name, f.avatar, "xs") }}{% endfor %}</span>
+        {{ mutual|length }} mutual friend{{ 's' if mutual|length != 1 }}</p>{% endif %}
+    </div>
+  </section>
+
+  <nav class="tabs">
+    <a class="{{ 'on' if tab == 'events' }}" href="?tab=events">{{ icon("ticket", "ico sm") }}Events</a>
+    <a class="{{ 'on' if tab == 'certs' }}" href="?tab=certs">{{ icon("award", "ico sm") }}Certifications <span class="n">{{ cert_count }}</span></a>
+    <a class="{{ 'on' if tab == 'badges' }}" href="?tab=badges">{{ icon("sparkles", "ico sm") }}Badges <span class="n">{{ badges|length }}</span></a>
+    <a class="{{ 'on' if tab == 'friends' }}" href="?tab=friends">{{ icon("users", "ico sm") }}Friends <span class="n">{{ friend_count }}</span></a>
+  </nav>
+
+  {% if tab == 'events' %}
+    {% if not events_visible %}
+      <div class="lock-note">{{ icon("lock", "ico lg") }}<h3 style="margin-top:10px">Events are private</h3><p>{{ u.name.split()[0] }} shares events with {{ "friends only" if u.show_events == 'friends' else "nobody" }}.</p></div>
+    {% elif events %}
+      <div class="tlist">
+        {% for e in events %}
+        <a class="tk reveal" href="{{ url_for('events.detail', eid=e.id) }}" style="--c: {{ e.category|cat_color }}">
+          <div class="stub"><b>{{ e.start_dt|day }}</b><small>{{ e.start_dt|mon }}</small><span>{{ e.start_dt|date("%Y") }}</span></div>
+          <div class="info"><h3>{{ e.title }}</h3><span class="muted small">{{ e.college }} · {{ e.venue }}</span></div>
+          <div class="side">{% if e.attended %}<span class="pill green">Attended</span>{% elif e.status == 'completed' %}<span class="pill">Ended</span>{% else %}<span class="pill blue">Going</span>{% endif %}</div>
+        </a>
+        {% endfor %}
+      </div>
+    {% else %}{{ empty("🎟️", "No events yet", (("You haven't" if is_me else u.name.split()[0] ~ " hasn't") ~ " registered for anything yet."), url_for('social.explore') if is_me else None, "Find events") }}{% endif %}
+  {% elif tab == 'certs' %}
+    {% if not events_visible %}
+      <div class="lock-note">{{ icon("lock", "ico lg") }}<h3 style="margin-top:10px">Certifications are private</h3><p>{{ u.name.split()[0] }} shares them with {{ "friends only" if u.show_events == 'friends' else "nobody" }}.</p></div>
+    {% elif certs %}
+      {% include "partials/cert_grid.html" %}
+    {% else %}{{ empty("📜", "No certificates yet", ("Check in at an event and your certificate lands here automatically." if is_me else u.name.split()[0] ~ " hasn't earned a certificate yet.")) }}{% endif %}
+  {% elif tab == 'badges' %}
+    {% if badges %}
+      <div class="badges">{% for e, t, d in badges %}<div class="badge-card reveal"><span class="e">{{ e }}</span><b>{{ t }}</b><small>{{ d }}</small></div>{% endfor %}</div>
+    {% else %}{{ empty("🏅", "No badges yet", "Badges unlock as you register, attend and explore.") }}{% endif %}
+  {% else %}
+    {% if friends %}
+      <div class="people">{% for f in friends %}<a class="person-card reveal lift" href="{{ url_for('social.profile', username=f.username) }}">{{ avatar(f.name, f.avatar, "lg") }}<b>{{ f.name }}</b><small>@{{ f.username }}</small></a>{% endfor %}</div>
+    {% else %}{{ empty("🤝", "No friends yet", "Friends show up here once requests are accepted.") }}{% endif %}
+  {% endif %}
+
+  {% if g.user and not is_me %}
+  <form method="post" action="{{ url_for('social.report') }}" style="margin-top:30px" data-confirm="Report this account to the EventFlow team?">
+    {{ csrf_field() }}<input type="hidden" name="target_type" value="user"><input type="hidden" name="target_id" value="{{ u.id }}">
+    <input type="hidden" name="reason" value="Inappropriate behaviour"><button class="linkish small" style="color:var(--ink-3)">Report @{{ u.username }}</button></form>
+  {% endif %}
+</div>
+{% endblock %}

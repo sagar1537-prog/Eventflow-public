@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page narrow center page-enter" style="padding-top:60px">
+  <div style="font:800 6rem/1 var(--display);letter-spacing:-.05em;background:linear-gradient(100deg,var(--brand),#FF5E7E,#7C5CFF);-webkit-background-clip:text;background-clip:text;color:transparent">{{ code }}</div>
+  <h1>{{ title }}</h1>
+  <p class="muted-2">{{ message }}</p>
+  <a class="btn brand" href="{{ url_for('social.home') }}">Go home</a>
+</div>
+{% endblock %}

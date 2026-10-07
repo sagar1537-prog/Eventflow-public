@@ -1,0 +1,11 @@
+{% from "partials/macros.html" import icon with context %}
+<nav class="subnav" aria-label="Developer console">
+  <a class="{{ 'on' if active == 'overview' }}" href="{{ url_for('dev.overview') }}">{{ icon("chart", "ico sm") }}Overview</a>
+  <a class="{{ 'on' if active == 'colleges' }}" href="{{ url_for('dev.colleges') }}">{{ icon("shield", "ico sm") }}Colleges{% if pending_colleges %} <span class="b">{{ pending_colleges }}</span>{% endif %}</a>
+  <a class="{{ 'on' if active == 'users' }}" href="{{ url_for('dev.users') }}">{{ icon("users", "ico sm") }}Users</a>
+  <a class="{{ 'on' if active == 'events' }}" href="{{ url_for('dev.events') }}">{{ icon("ticket", "ico sm") }}Events</a>
+  <a class="{{ 'on' if active == 'payments' }}" href="{{ url_for('dev.payments') }}">{{ icon("wallet", "ico sm") }}Payments</a>
+  <a class="{{ 'on' if active == 'reports' }}" href="{{ url_for('dev.reports') }}">{{ icon("flag", "ico sm") }}Reports{% if open_reports %} <span class="b">{{ open_reports }}</span>{% endif %}</a>
+  <a class="{{ 'on' if active == 'settings' }}" href="{{ url_for('dev.settings') }}">{{ icon("settings", "ico sm") }}Platform</a>
+  <a class="{{ 'on' if active == 'audit' }}" href="{{ url_for('dev.audit') }}">{{ icon("list", "ico sm") }}Audit log</a>
+</nav>

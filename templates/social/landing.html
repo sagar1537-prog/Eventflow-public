@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, avatar, vtick, event_card with context %}
+{% block title %}Campus events, together{% endblock %}
+{% block content %}
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+<section class="landing-hero">
+  <div class="page-enter">
+    <div class="row" style="margin-bottom:18px;gap:10px;flex-wrap:wrap">
+      <span class="pill brand">{{ icon("sparkles", "ico sm") }} The campus events network</span>
+      <span class="tk-team sm tk-reveal" style="--d:.35s"><span class="knight" aria-hidden="true">♞&#xFE0E;</span><span class="muted">by</span><span class="name">Tech-Knights</span></span>
+    </div>
+    <h1>Every college fest.<br><em>One feed.</em></h1>
+    <p class="lede">Colleges post their events. You follow, register, pay by UPI and walk in with a QR ticket, with your friends right next to you.</p>
+    <div class="row">
+      <a class="btn brand lg" href="{{ url_for('auth.signup_student') }}">Join as a student</a>
+      <a class="btn ghost lg" href="{{ url_for('auth.signup_college') }}">Register your college</a>
+    </div>
+    <div class="landing-stats">
+      <div><b data-count="{{ stats.colleges }}">{{ stats.colleges }}</b><span>colleges</span></div>
+      {% if stats.events %}<div><b data-count="{{ stats.events }}">{{ stats.events }}</b><span>events</span></div>
+      {% else %}<div><b data-count="{{ stats.friends }}">{{ stats.friends }}</b><span>friendships</span></div>{% endif %}
+      <div><b data-count="{{ stats.students }}">{{ stats.students }}</b><span>students</span></div>
+    </div>
+  </div>
+  <div class="phone-stage" aria-hidden="true">
+    <div class="float-card a">{{ icon("ticket") }}<div><b>You're in! 🎉</b><small class="muted">CodeStorm ticket ready</small></div></div>
+    <div class="float-card b"><span class="av-stack">{% for n in ['Rahul', 'Meera', 'Divya'] %}<span class="av av-xs" style="--h:{{ n|hue }}">{{ n[0] }}</span>{% endfor %}</span><div><b>3 friends going</b><small class="muted">Rhythm Night</small></div></div>
+    <div class="phone"><div class="phone-screen"><div class="phone-scroll">
+      {% for k in range(2) %}{% for t in ['post_rhythm.jpg', 'post_codestorm.jpg', 'post_valorant.jpg', 'post_pitch.jpg'] %}
+      <div class="mini-post"><img src="{{ url_for('media', rel='seed/' ~ t) }}" alt="" onerror="this.parentElement.remove()"><div>♥ {{ 120 + loop.index * 37 }} likes</div></div>
+      {% endfor %}{% endfor %}
+    </div></div></div>
+  </div>
+</section>
+
+{% if events %}
+<section class="landing-sec">
+  <div class="head-row"><div><h2>Happening soon</h2><p>Open for registration right now.</p></div><a class="btn ghost" href="{{ url_for('social.explore') }}">See all events</a></div>
+  <div class="ecards">{% for e in events %}{{ event_card(e) }}{% endfor %}</div>
+</section>
+{% endif %}
+
+<section class="landing-sec">
+  <h2 style="margin-bottom:20px">Built for both sides of the fest</h2>
+  <div class="feature-grid">
+    {% for emoji, title, text in [
+      ("📣", "Colleges post, students follow", "Posters, teaser videos and rulebooks in a feed that feels like Instagram."),
+      ("🎟️", "Register and pay in one tap", "UPI QR payments, coupons, waitlists and instant QR tickets."),
+      ("🤝", "Go with friends", "Add friends, see who's going, share events in chat."),
+      ("🗓️", "Your schedule, sorted", "Every ticket, slot and room in one calendar."),
+      ("📊", "A studio for every event", "Registrations, payments, check-in scanner, food budget and live stats."),
+      ("🤖", "An assistant that knows", "Ask about timings, venues, fees or your own slot, any time.")] %}
+    <div class="feature reveal lift"><span class="fi">{{ emoji }}</span><h3>{{ title }}</h3><p>{{ text }}</p></div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if colleges %}
+<section class="landing-sec">
+  <h2 style="margin-bottom:20px">Colleges on EventFlow</h2>
+  <div class="people">
+    {% for c in colleges %}
+    <a class="person-card reveal lift" href="{{ url_for('social.profile', username=c.username) }}">
+      {{ avatar(c.name, c.avatar, "lg") }}<b>{{ c.name }}{{ vtick(c.verification) }}</b><small>{{ c.city }} · {{ c.followers }} followers · {{ c.events }} events</small>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="landing-sec center">
+  <h2>Your next favourite event is one tap away.</h2>
+  <div class="row" style="justify-content:center;margin-top:16px">
+    <a class="btn brand lg" href="{{ url_for('auth.signup_choice') }}">Create a free account</a>
+    <a class="btn ghost lg" href="{{ url_for('auth.login') }}">Log in</a>
+  </div>
+  <div class="reveal" style="margin-top:46px"><span class="tk-team lg"><span class="knight" aria-hidden="true">♞&#xFE0E;</span><span>Crafted by</span><span class="name">Team Tech-Knights</span></span></div>
+  <p class="mini-foot" style="margin-top:10px">EventFlow · Made for campuses across India</p>
+</section>
+{% endblock %}

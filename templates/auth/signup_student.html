@@ -1,0 +1,34 @@
+{% extends "auth/_layout.html" %}
+{% from "auth/_fields.html" import field %}
+{% block title %}Student sign-up{% endblock %}
+{% block art %}<h2>Find your people at every fest.</h2><p>Follow colleges, see which friends are going and keep every ticket in one place.</p>{% endblock %}
+{% block form %}
+<h1>Create your account</h1>
+<p class="muted">Takes under a minute. <a class="link" href="{{ url_for('auth.signup_college') }}">Signing up a college?</a></p>
+<form method="post" style="margin-top:18px" novalidate>
+  {{ csrf_field() }}
+  {{ field("name", "Full name", errors, form, autocomplete="name") }}
+  <div class="grid-2">
+    {{ field("username", "Username", errors, form, placeholder="ananya.s", autocomplete="username", extra='pattern="[A-Za-z0-9_.]{3,30}"') }}
+    {{ field("phone", "Mobile", errors, form, type="tel", hint="(optional)", required=False, placeholder="98xxxxxxxx", autocomplete="tel") }}
+  </div>
+  {{ field("email", "Email", errors, form, type="email", autocomplete="email") }}
+  {{ field("college_name", "Your college", errors, form, required=False, placeholder="Where do you study?") }}
+  <div class="grid-2">
+    <div class="field"><label for="department">Department</label>
+      <select id="department" name="department">{% for d in ["CSE","IT","ECE","EEE","AI&DS","MECH","Civil","Biotech","Design","B.Com","BBA","MBA","Arts","Science","Other"] %}<option {{ 'selected' if form.get('department') == d }}>{{ d }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="year">Year</label>
+      <select id="year" name="year">{% for y in ["I","II","III","IV","V","PG"] %}<option {{ 'selected' if form.get('year') == y }}>{{ y }}</option>{% endfor %}</select></div>
+  </div>
+  {{ field("city", "City", errors, form, required=False, placeholder="Chennai") }}
+  <div class="field {{ 'has-err' if errors.get('password') }}"><label for="password">Password <span class="hint">8+ characters, letters and numbers</span></label>
+    <div class="pw-wrap"><input id="password" name="password" type="password" required autocomplete="new-password" data-strength="#pw-meter">
+      <button class="btn soft sm" type="button" data-pw-toggle data-noload>Show</button></div>
+    <div class="strength" id="pw-meter"><i></i></div>
+    {% if errors.get('password') %}<span class="err">{{ errors.password }}</span>{% endif %}</div>
+  <label class="check"><input type="checkbox" name="agree" {{ 'checked' if form.get('agree') }}> I'll follow the community guidelines and be kind to others.</label>
+  {% if errors.get('agree') %}<span class="err small" style="color:var(--rose)">{{ errors.agree }}</span>{% endif %}
+  <button class="btn brand lg block" type="submit" style="margin-top:8px">Create account</button>
+</form>
+<p class="center muted" style="margin-top:18px">Already on EventFlow? <a class="link" href="{{ url_for('auth.login') }}">Log in</a></p>
+{% endblock %}

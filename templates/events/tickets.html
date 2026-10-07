@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, reg_pill, empty with context %}
+{% block title %}My tickets{% endblock %}
+{% block content %}
+<div class="page page-enter">
+  <div class="head-row">
+    <div><h1>My tickets</h1><p>Every event you've registered for, and when you need to be there.</p></div>
+    <div class="seg"><a class="{{ 'on' if view != 'calendar' }}" href="?view=list&tab={{ tab }}">{{ icon("list", "ico sm") }}List</a><a class="{{ 'on' if view == 'calendar' }}" href="?view=calendar">{{ icon("calendar", "ico sm") }}Calendar</a></div>
+  </div>
+
+  {% if view == 'calendar' %}
+  <section class="card">
+    <div class="card-head">
+      <a class="iconbtn" href="?view=calendar&month={{ prev_m }}" aria-label="Previous month">{{ icon("left") }}</a>
+      <h2>{{ first.strftime("%B %Y") }}</h2>
+      <a class="iconbtn" href="?view=calendar&month={{ next_m }}" aria-label="Next month">{{ icon("right") }}</a>
+    </div>
+    <table class="cal">
+      <thead><tr>{% for d in ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"] %}<th>{{ d }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for week in weeks %}<tr>
+          {% for d in week %}
+          <td class="{{ 'out' if d.month != first.month }} {{ 'today' if d == today }}"><span class="dn">{{ d.day }}</span>
+            {% for r in by_day.get(d.isoformat(), []) %}<a href="{{ url_for('events.ticket', code=r.pass_code) }}" style="--c: {{ r.category|cat_color }}" title="{{ r.title }}">{{ r.start_dt|time }} {{ r.title }}</a>{% endfor %}
+          </td>
+          {% endfor %}
+        </tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% else %}
+  <nav class="tabs">
+    {% for key, label in [("upcoming", "Upcoming"), ("pending", "Pending"), ("waitlist", "Waitlist"), ("past", "Past")] %}
+    <a class="{{ 'on' if tab == key }}" href="?tab={{ key }}">{{ label }} {% if groups[key] %}<span class="n">{{ groups[key]|length }}</span>{% endif %}</a>
+    {% endfor %}
+  </nav>
+  {% set items = groups[tab] %}
+  {% if items %}
+  <div class="tlist">
+    {% for r in items %}
+    <article class="tk reveal" style="--c: {{ r.category|cat_color }}">
+      <div class="stub"><b>{{ r.start_dt|day }}</b><small>{{ r.start_dt|mon }}</small><span>{{ r.start_dt|time }}</span></div>
+      <div class="info">
+        <div class="row">{{ reg_pill(r.status, r.pay_status) }}{% if tab == 'upcoming' %}<span class="pill">{{ r.start_dt|until }}</span>{% endif %}</div>
+        {% if r.fest_title %}<span class="tk-fest">🎪 {{ r.fest_title }}</span>{% endif %}
+        <h3><a href="{{ url_for('events.detail', eid=r.event_id) }}">{{ r.title }}</a></h3>
+        <span class="muted small">{{ r.college }} · {{ r.venue }}{% if r.team_name %} · Team {{ r.team_name }}{% endif %}</span>
+        {% if r.slot_start and r.status == 'confirmed' %}<span class="slotline">{{ icon("clock", "ico sm") }}<span>Your slot <b>{{ r.slot_start|time }}–{{ r.slot_end|time }}</b> · {{ r.slot_venue }}</span></span>{% endif %}
+      </div>
+      <div class="side">
+        {% if r.status == 'confirmed' %}
+          {% if r.attended %}<a class="btn brand sm" href="{{ url_for('events.certificate', code=r.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>
+          {% elif tab == 'past' %}<span class="pill">Not checked in</span>
+          {% else %}<a class="btn sm" href="{{ url_for('events.ticket', code=r.pass_code) }}">{{ icon("qr", "ico sm") }}Ticket</a>{% endif %}
+        {% elif r.status == 'pending_payment' and r.receipt_no %}<a class="btn brand sm" href="{{ url_for('events.checkout', receipt=r.receipt_no) }}">Pay now</a>
+        {% else %}<a class="btn ghost sm" href="{{ url_for('events.ticket', code=r.pass_code) }}">Details</a>{% endif %}
+        {% if r.receipt_no and r.pay_status in ('paid', 'refunded') and r.amount %}<a class="link tiny" href="{{ url_for('events.receipt', receipt=r.receipt_no) }}">Receipt</a>{% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+    {% if tab == 'upcoming' %}{{ empty("🎟️", "No upcoming tickets", "Find something fun this week.", url_for('social.explore'), "Explore events") }}
+    {% elif tab == 'pending' %}{{ empty("✅", "Nothing pending", "Payments waiting for verification will show up here.") }}
+    {% elif tab == 'waitlist' %}{{ empty("⏳", "No waitlists", "If an event is full, join its waitlist and we'll notify you.") }}
+    {% else %}{{ empty("📜", "No past events yet", "Events you've attended and their certificates live here.") }}{% endif %}
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

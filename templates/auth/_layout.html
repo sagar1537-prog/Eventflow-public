@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block shell %}
+<div class="auth-wrap">
+  <aside class="auth-art" aria-hidden="true">
+    <a class="brand" href="{{ url_for('social.home') }}"><span class="brand-mark"><i></i></span><span class="brand-text">EventFlow</span></a>
+    <div class="tile-wall">
+      {% set tiles = ['post_codestorm.jpg','post_rhythm.jpg','post_valorant.jpg','post_pitch.jpg','post_technova.jpg','post_football.jpg','post_photowalk.jpg','post_casechallenge.jpg','post_roborumble.jpg'] %}
+      {% for c in range(3) %}<div class="col">{% for k in range(2) %}{% for t in tiles[c*3:c*3+3] %}<img src="{{ url_for('media', rel='seed/' ~ t) }}" alt="" onerror="this.remove()">{% endfor %}{% endfor %}</div>{% endfor %}
+    </div>
+    <div class="copy">{% block art %}{% endblock %}
+      <div class="tk-team tk-reveal" style="--d:.5s;margin-top:22px;color:#fff"><span class="knight" aria-hidden="true">♞&#xFE0E;</span><span style="opacity:.7">Built by</span><span class="name">Tech-Knights</span></div></div>
+  </aside>
+  <main class="auth-main">
+    <div class="auth-box page-enter">{% block form %}{% endblock %}
+      <div class="tk-credit show-sm"><span class="tk-team sm"><span class="knight" aria-hidden="true">♞&#xFE0E;</span><span>Built by</span><span class="name">Tech-Knights</span></span></div></div>
+  </main>
+</div>
+{% endblock %}
+{% block assistant %}{% endblock %}

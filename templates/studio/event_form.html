@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon with context %}
+{% set editing = e.id is defined and e.id %}
+{% set is_fest = (e.kind is defined and e.kind == 'fest') %}
+{% set is_sub = (e.parent_id is defined and e.parent_id) %}
+{% block title %}{{ "Edit event" if editing else "New event" }}{% endblock %}
+{% block content %}
+{% macro dtval(v) %}{{ (v or "")[:16]|replace(" ", "T") }}{% endmacro %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>{{ "Edit " ~ e.title if editing else "Create an event or fest" }}</h1><p>{{ "Changes go live straight away." if editing else "Publish it now or save a draft. You can add a schedule after." }}</p></div></div>
+  {% include "studio/_nav.html" %}
+  <form method="post" enctype="multipart/form-data" class="cols-2" style="align-items:start">
+    {{ csrf_field() }}
+    <div class="stack-lg">
+      {% if not editing %}
+      <section class="card pad-lg">
+        <h3>What are you hosting?</h3>
+        <div class="kind-pick">
+          <label class="kind-tile"><input type="radio" name="kind" value="event" {{ 'checked' if not is_fest }}><span class="kt-emoji">🎟️</span><b>Single event</b><small>One hackathon, workshop or show with one ticket.</small></label>
+          <label class="kind-tile"><input type="radio" name="kind" value="fest" {{ 'checked' if is_fest }}><span class="kt-emoji">🎪</span><b>Fest · many events</b><small>A symposium with Technical, Non-technical and Sports events, each with its own fee.</small></label>
+        </div>
+        <label class="check fest-only" style="margin-top:12px"><input type="checkbox" name="template" value="1" checked> Start with the Technical · Non-technical · Sports layout (24 events, all editable)</label>
+      </section>
+      {% endif %}
+      {% if is_sub %}<a class="fest-parent" href="{{ url_for('studio.event', eid=e.parent_id) }}"><span class="e">🎪</span>Part of {{ parent_title }}{{ icon("right", "ico sm") }}</a>{% endif %}
+      <section class="card pad-lg">
+        <h3>Banner</h3>
+        <label class="dropzone" style="padding:0;overflow:hidden;aspect-ratio:16/9;display:grid;place-items:center">
+          <input type="file" name="banner" accept="image/*" data-preview="#banner-prev">
+          <img id="banner-prev" {% if e.banner %}src="{{ url_for('media', rel=e.banner) }}"{% else %}hidden{% endif %} alt="" style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0">
+          <span style="position:relative"><span style="font-size:2rem">🖼️</span><br><b>Upload a 16:9 banner</b><br><span class="muted small">JPG or PNG, up to 10 MB</span></span>
+        </label>
+        {% if e.banner %}<label class="check small" style="margin-top:8px"><input type="checkbox" name="remove_banner"> Remove banner</label>{% endif %}
+      </section>
+      <section class="card pad-lg">
+        <h3>Basics</h3>
+        <div class="field"><label for="title">{{ "Fest name" if is_fest else "Event name" }}</label><input id="title" name="title" value="{{ e.title or '' }}" required maxlength="120" placeholder="{{ 'TechTrove 3.0' if is_fest else 'HackArunai 24H' }}"></div>
+        <div class="field"><label for="tagline">One-line pitch</label><input id="tagline" name="tagline" value="{{ e.tagline or '' }}" maxlength="160" placeholder="What makes it worth coming?"></div>
+        <div class="field"><label for="description">Description <span class="hint">#tags and **bold** work</span></label><textarea id="description" name="description" style="min-height:160px">{{ e.description or '' }}</textarea></div>
+        <div class="grid-2">
+          <div class="field"><label for="category">Category</label><select id="category" name="category">{% for c in CATEGORIES %}<option {{ 'selected' if e.category == c }}>{{ c }}</option>{% endfor %}</select></div>
+          <div class="field"><label for="status">Visibility</label><select id="status" name="status">
+            {% for v, l in [("draft", "Draft (hidden)"), ("open", "Open for registration"), ("closed", "Registration closed"), ("completed", "Completed")] %}<option value="{{ v }}" {{ 'selected' if e.status == v }}>{{ l }}</option>{% endfor %}</select></div>
+        </div>
+      </section>
+      <section class="card pad-lg">
+        <h3>When and where</h3>
+        <div class="grid-2">
+          <div class="field"><label for="start_dt">Starts</label><input id="start_dt" name="start_dt" type="datetime-local" value="{{ dtval(e.start_dt) }}" required></div>
+          <div class="field"><label for="end_dt">Ends</label><input id="end_dt" name="end_dt" type="datetime-local" value="{{ dtval(e.end_dt) }}" required></div>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label for="venue">Venue</label><input id="venue" name="venue" value="{{ e.venue or '' }}" required placeholder="Main Auditorium"></div>
+          <div class="field"><label for="city">City</label><input id="city" name="city" value="{{ e.city or '' }}"></div>
+        </div>
+        <div class="field"><label for="venue_details">Directions</label><input id="venue_details" name="venue_details" value="{{ e.venue_details or '' }}" placeholder="Block A, ground floor. Enter via Gate 2."></div>
+        <div class="field"><label for="map_url">Google Maps link <span class="hint">(optional)</span></label><input id="map_url" name="map_url" type="url" value="{{ e.map_url or '' }}" placeholder="https://maps.google.com/…"></div>
+      </section>
+    </div>
+    <div class="stack-lg" style="position:sticky;top:24px">
+      <section class="card pad-lg fest-only">
+        <h3>Tickets for a fest</h3>
+        <p class="muted small mb-0">Prices, seats and team sizes are set for each event inside the fest: a track pass (one fee for every event in it), a fee per event, or a fee per team. {% if editing %}Manage them on the fest's Studio page.{% else %}You'll set them up right after this.{% endif %}</p>
+      </section>
+      <section class="card pad-lg event-only">
+        <h3>Tickets</h3>
+        {% if is_sub %}
+        <div class="grid-2">
+          <div class="field"><label for="track_id">Track</label><select id="track_id" name="track_id">{% for t in tracks %}<option value="{{ t.id }}" {{ 'selected' if e.track_id == t.id }}>{{ t.emoji }} {{ t.name }}{% if t.pricing == 'pass' %} (pass){% endif %}</option>{% endfor %}</select></div>
+          <div class="field"><label for="fee_type">Fee is</label><select id="fee_type" name="fee_type"><option value="person" {{ 'selected' if e.fee_type != 'team' }}>Per person</option><option value="team" {{ 'selected' if e.fee_type == 'team' }}>Per team (captain pays)</option></select></div>
+        </div>
+        <div class="field"><label for="label">Tag <span class="hint">(optional, e.g. Boys only)</span></label><input id="label" name="label" maxlength="40" value="{{ e.label or '' }}"></div>
+        {% endif %}
+        <div class="grid-2">
+          <div class="field"><label for="fee">Price (₹) <span class="hint">0 = free</span></label><input id="fee" name="fee" type="number" min="0" step="1" value="{{ e.fee or 0 }}"></div>
+          <div class="field"><label for="capacity">Seats</label><input id="capacity" name="capacity" type="number" min="1" value="{{ e.capacity or 100 }}"></div>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label for="team_size">Team size</label><select id="team_size" name="team_size">{% for n in range(1, 11) %}<option value="{{ n }}" {{ 'selected' if (e.team_size or 1) == n }}>{{ "Solo" if n == 1 else "Up to " ~ n }}</option>{% endfor %}</select></div>
+          <div class="field"><label for="reg_deadline">Registration closes</label><input id="reg_deadline" name="reg_deadline" type="datetime-local" value="{{ dtval(e.reg_deadline) }}"></div>
+        </div>
+        {% if g.user.role == 'college' and not g.user.upi_id %}<p class="small" style="color:#B7791F">Add your UPI ID in <a class="link" href="{{ url_for('social.settings', tab='payments') }}">Settings → Payments</a> to sell paid tickets.</p>{% endif %}
+        <p class="tiny muted mb-0">EventFlow keeps a {{ setting('platform_fee_pct') }}% platform fee on paid tickets.</p>
+      </section>
+      <section class="card pad-lg">
+        <h3>Food plan</h3>
+        <div class="grid-3">
+          <div class="field"><label for="meals_count">Meals</label><input id="meals_count" name="meals_count" type="number" min="0" value="{{ e.meals_count or 0 }}"></div>
+          <div class="field"><label for="food_cost_per_head">₹/plate</label><input id="food_cost_per_head" name="food_cost_per_head" type="number" min="0" value="{{ (e.food_cost_per_head or 0)|int }}"></div>
+          <div class="field"><label for="food_buffer_pct">Buffer %</label><input id="food_buffer_pct" name="food_buffer_pct" type="number" min="0" value="{{ (e.food_buffer_pct or 0)|int }}"></div>
+        </div>
+      </section>
+      <div class="row">
+        <button class="btn brand lg" type="submit">{{ "Save changes" if editing else "Create event" }}</button>
+        <a class="btn ghost lg" href="{{ url_for('studio.event', eid=e.id) if editing else url_for('studio.overview') }}">Cancel</a>
+      </div>
+    </div>
+  </form>
+  {% if editing and (g.user.role in ('college', 'dev')) %}
+  <form method="post" action="{{ url_for('studio.event_delete', eid=e.id) }}" data-confirm="Delete {{ e.title }} and everything attached to it? This can't be undone." style="margin-top:28px">
+    {{ csrf_field() }}<button class="btn danger">{{ icon("trash", "ico sm") }}Delete {{ "fest and all its events" if is_fest else "event" }}</button></form>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const form = document.querySelector("form.cols-2"), fixed = {{ 'true' if is_fest else 'false' }};
+  const apply = () => {
+    const r = form.querySelector("input[name=kind]:checked"), fest = r ? r.value === "fest" : fixed;
+    form.querySelectorAll(".fest-only").forEach((el) => { el.hidden = !fest; });
+    form.querySelectorAll(".event-only").forEach((el) => { el.hidden = fest; });
+    const t = form.querySelector("#title"); if (t && !t.value) t.placeholder = fest ? "TechTrove 3.0" : "HackArunai 24H";
+    const c = form.querySelector("#category"); if (fest && r && c.value === "Technical") c.value = "Fest";
+  };
+  form.querySelectorAll("input[name=kind]").forEach((i) => i.addEventListener("change", apply));
+  apply();
+})();
+</script>
+{% endblock %}

@@ -37,9 +37,9 @@
     </section>
     <section class="card reveal">
       <div class="card-head"><h3>Latest payments</h3></div>
-      {% for p in recent %}
-      <div class="suggest">{{ avatar(p.name, None, "sm") }}<span class="grow"><b>{{ p.name }}</b><small>{{ p.title }} · {{ p.created_at|rel }}</small></span>
-        <span class="r"><b class="num">{{ p.amount|inr }}</b><br>{% if p.status == 'submitted' %}<span class="pill amber">Verify</span>{% else %}<span class="pill green">Paid</span>{% endif %}</span></div>
+      {% for o in recent %}{% set p = o.head %}
+      <div class="suggest pay-order">{{ avatar(p.name, p.avatar, "sm") }}<span class="grow"><b>{{ p.name }}</b><small>{{ o.events|join(", ") if o.events|length <= 2 else (o.events[:2]|join(", ") ~ " +" ~ (o.events|length - 2) ~ " more") }} · {{ p.created_at|rel }}</small></span>
+        <span class="r"><b class="num">{{ o.total|inr }}</b>{% if o.status == 'submitted' %}<span class="pill amber">Verify</span>{% else %}<span class="pill green">Paid</span>{% endif %}</span></div>
       {% else %}<p class="muted">No payments yet.</p>{% endfor %}
     </section>
   </div>

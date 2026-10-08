@@ -99,6 +99,13 @@
   <main class="main" id="main">
     {% if config.get('DATA_AT_RISK') and g.user and g.user.role in ('dev', 'college') %}<div class="notice-banner danger-banner" style="margin:-26px -32px 22px">⚠️ Data is not being saved permanently: this Render service has no <b>DATABASE_URL</b>, so accounts and events are wiped on every restart. Add it under Render → Environment (the database's Internal URL), or deploy with the Blueprint.</div>{% endif %}
     {% if setting('banner_text') %}<div class="notice-banner" style="margin:-26px -32px 22px">{{ setting('banner_text') }}</div>{% endif %}
+    {% if g.user.role == 'student' %}
+    <div class="live-strip" data-live='{{ live_now|tojson }}' {% if not live_now %}hidden{% endif %}>
+      <span class="live-dot" aria-hidden="true"></span>
+      <a class="live-link" data-live-link href="{{ live_now[0].link if live_now else '#' }}"><b>LIVE</b><span data-live-text>{{ live_now[0].text|replace('🔴 Live · ', '') if live_now else '' }}</span><span class="live-more" data-live-more></span></a>
+      <button type="button" class="live-alerts" data-live-alerts hidden>🔔 Alerts</button>
+    </div>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
 

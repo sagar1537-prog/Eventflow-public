@@ -351,7 +351,11 @@ def seed(app):
         register("codestorm", u, team=team, method="demo" if i % 5 == 0 else "upi")
     for u in ["zara.k", "yash.a", "neha.k"]:
         register("codestorm", u, status="payment_review", team="Late Commits", pay_status="submitted", days_before=0.2)
-    core.assign_slots(eid["codestorm"], core.parse_dt(at(6, (10, 0))), 10, 5, ["Lab 1 (Block B)", "Lab 2 (Block B)", "Lab 4 (Block B)"])
+    # CodeStorm Day 2 pitches: 10-minute slots in three labs, one team (up to 4) per slot
+    import scheduler
+    for lab in ["Lab 1 (Block B)", "Lab 2 (Block B)", "Lab 4 (Block B)"]:
+        scheduler.generate([eid["codestorm"]], core.parse_dt(at(6, (10, 0))), 10, 5, 4, 4, lab)
+    scheduler.place_new(eid["codestorm"], notify=False)
 
     # AI workshop (completed): attendance known → certificates + learned show rate
     for u in rnd.sample(pool, 22) + ["ananya"]:

@@ -19,7 +19,7 @@
     {% if next_ticket %}
     <a class="post-cta reveal" href="{{ url_for('events.ticket', code=next_ticket.pass_code) }}" style="margin:0 0 20px;background:var(--surface);border-color:var(--line)">
       <span class="date"><b>{{ next_ticket.start_dt|day }}</b><small>{{ next_ticket.start_dt|mon }}</small></span>
-      <span class="grow"><b>Next up: {{ next_ticket.title }}</b><small>{{ next_ticket.start_dt|until }}, {{ next_ticket.start_dt|time }}{% if next_ticket.slot_start %} · your slot {{ next_ticket.slot_start|time }}, {{ next_ticket.slot_venue }}{% else %} · {{ next_ticket.venue }}{% endif %}</small></span>
+      <span class="grow"><b>Next up: {{ next_ticket.fest_title ~ " · " if next_ticket.fest_title }}{{ next_ticket.title }}</b><small>{{ (next_ticket.slot_start or next_ticket.start_dt)|until }}, {{ (next_ticket.slot_start or next_ticket.start_dt)|time }}{% if next_ticket.slot_start and next_ticket.slot_start[:16] != next_ticket.start_dt[:16] %} · your slot{% endif %} · {{ next_ticket.slot_venue or next_ticket.venue }}</small></span>
       <span class="btn sm">{{ icon("qr", "ico sm") }}Ticket</span>
     </a>
     {% endif %}

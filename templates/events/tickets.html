@@ -37,24 +37,31 @@
   {% set items = groups[tab] %}
   {% if items %}
   <div class="tlist">
-    {% for r in items %}
-    <article class="tk reveal" style="--c: {{ r.category|cat_color }}">
-      <div class="stub"><b>{{ r.start_dt|day }}</b><small>{{ r.start_dt|mon }}</small><span>{{ r.start_dt|time }}</span></div>
+    {% for c in items %}{% set r = c.first %}
+    <article class="tk reveal {{ 'tk-fest' if c.fest }}" style="--c: {{ c.category|cat_color }}">
+      <div class="stub"><b>{{ c.start_dt|day }}</b><small>{{ c.start_dt|mon }}</small><span>{{ c.start_dt|time }}</span></div>
       <div class="info">
-        <div class="row">{{ reg_pill(r.status, r.pay_status) }}{% if tab == 'upcoming' %}<span class="pill">{{ r.start_dt|until }}</span>{% endif %}</div>
-        {% if r.fest_title %}<span class="tk-fest">🎪 {{ r.fest_title }}</span>{% endif %}
+        <div class="row">{{ reg_pill(c.status, c.pay_status) }}{% if tab == 'upcoming' %}<span class="pill">{{ c.start_dt|until }}</span>{% endif %}</div>
+        {% if c.fest %}
+        <span class="tk-fest">🎪 One ticket · {{ c.rows|length }} event{{ 's' if c.rows|length != 1 }}</span>
+        <h3><a href="{{ url_for('events.ticket', code=r.pass_code) }}">{{ c.title }}</a></h3>
+        <span class="muted small">{{ c.college }} · {{ c.venue }}</span>
+        <div class="tk-events">{% for x in c.rows %}<span class="tk-ev {{ 'done' if x.completed_at }}">{{ "✓ " if x.completed_at }}{{ x.title }}{% if x.slot_start and x.status == 'confirmed' %}<small>{{ x.slot_start|time }}</small>{% endif %}</span>{% endfor %}</div>
+        {% else %}
         <h3><a href="{{ url_for('events.detail', eid=r.event_id) }}">{{ r.title }}</a></h3>
         <span class="muted small">{{ r.college }} · {{ r.venue }}{% if r.team_name %} · Team {{ r.team_name }}{% endif %}</span>
-        {% if r.slot_start and r.status == 'confirmed' %}<span class="slotline">{{ icon("clock", "ico sm") }}<span>Your slot <b>{{ r.slot_start|time }}–{{ r.slot_end|time }}</b> · {{ r.slot_venue }}</span></span>{% endif %}
+        {% if r.slot_start and r.status == 'confirmed' and r.slot_start[:16] != r.start_dt[:16] %}<span class="slotline">{{ icon("clock", "ico sm") }}<span>Your slot <b>{{ r.slot_start|time }}–{{ r.slot_end|time }}</b>{% if r.slot_venue %} · {{ r.slot_venue }}{% endif %}</span></span>{% endif %}
+        {% endif %}
       </div>
       <div class="side">
-        {% if r.status == 'confirmed' %}
-          {% if r.attended %}<a class="btn brand sm" href="{{ url_for('events.certificate', code=r.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>
-          {% elif tab == 'past' %}<span class="pill">Not checked in</span>
-          {% else %}<a class="btn sm" href="{{ url_for('events.ticket', code=r.pass_code) }}">{{ icon("qr", "ico sm") }}Ticket</a>{% endif %}
-        {% elif r.status == 'pending_payment' and r.receipt_no %}<a class="btn brand sm" href="{{ url_for('events.checkout', receipt=r.receipt_no) }}">Pay now</a>
+        {% if c.status == 'confirmed' %}
+          {% if tab == 'past' and c.certs %}<a class="btn brand sm" href="{{ url_for('events.certificate', code=c.certs[0].pass_code) if c.certs|length == 1 else url_for('events.ticket', code=r.pass_code) }}">{{ icon("award", "ico sm") }}Certificate{{ "s" if c.certs|length > 1 }}</a>
+          {% elif tab == 'past' %}<span class="pill">{{ "Not checked in" if not r.attended else "Attended" }}</span>
+          {% else %}<a class="btn sm" href="{{ url_for('events.ticket', code=r.pass_code) }}">{{ icon("qr", "ico sm") }}Ticket</a>
+            {% if c.certs %}<a class="link tiny" href="{{ url_for('events.ticket', code=r.pass_code) }}">{{ c.certs|length }} certificate{{ 's' if c.certs|length != 1 }} ready</a>{% endif %}{% endif %}
+        {% elif c.status == 'pending_payment' and c.pay_receipt %}<a class="btn brand sm" href="{{ url_for('events.checkout', receipt=c.pay_receipt) }}">Pay now</a>
         {% else %}<a class="btn ghost sm" href="{{ url_for('events.ticket', code=r.pass_code) }}">Details</a>{% endif %}
-        {% if r.receipt_no and r.pay_status in ('paid', 'refunded') and r.amount %}<a class="link tiny" href="{{ url_for('events.receipt', receipt=r.receipt_no) }}">Receipt</a>{% endif %}
+        {% for rc in c.receipts %}<a class="link tiny" href="{{ url_for('events.receipt', receipt=rc) }}">Receipt{% if c.receipts|length > 1 %} {{ loop.index }}{% endif %}</a>{% endfor %}
       </div>
     </article>
     {% endfor %}

@@ -83,16 +83,29 @@ before `run.bat` (after `reset-demo.bat`).
 
 ## What's inside
 
-**Step-by-step event day.** Every participant's ticket guides them through ordered tasks, each with its own QR code:
+**Step-by-step event day.** Every participant's ticket is one task list, each task with its own QR code:
 1. 🚪 **Entry**: scanned at the gate (marks attendance),
-2. 🎯 **Event**: the *completion* QR is scanned when they finish, which unlocks their certificate,
-3. 🍽️ **Food**: scanned at the food counter (only if the event serves meals and they chose a meal),
-4. 🎯 **Next events** in the same fest, each with its own completion QR and certificate.
+2. 🎯 **Their events, in their own time slots**: each event's QR is accepted only at that event's desk and only during
+   the participant's allotted slot (a slot 1 QR is refused in slot 2), and scanning it unlocks the certificate,
+3. 🍽️ **Meals**: scanned at the food counter, placed in the list where the organisers put them (or by meal time).
 
-A step unlocks only after the one before it. QR codes are signed, so they can't be faked, and the ticket page
-switches to the next QR by itself a few seconds after a scan. Volunteers pick their station (entry gate, event
-completion, food counter, or "any step") on the check-in desk, which shows live counts for each step. Organisers can
-also tap **Complete for all checked in** at the end of an event.
+The order (entry, then events and meals) is set by the college or event leads by **dragging the items into place**,
+like a music queue. A task unlocks only after the one before it; staff can skip a task for someone when needed. QR
+codes are signed, so they can't be faked, and the ticket switches to the next QR by itself after a scan. Volunteers
+pick a desk (**entry gate**, **event desk** for one event and its running slot, **food counter** for one meal), each
+with live counts. Organisers can also tap **Complete for all checked in** at the end of an event.
+
+**Time slots.** Every event (including each event inside a fest) runs in one or more time slots with a set number of
+members per slot. **⚡ Make time slots** creates them for several events at once (e.g. 5 slots of 60 minutes, 20
+members each). The allocator fills every event's first slot first, keeps teams together, never gives anyone two
+clashing slots across events, follows the event-day order and respects times people marked as busy. New participants
+get a slot the moment their ticket is confirmed; **Re-allocate everyone** makes a fresh plan (with a preview). For
+exceptions, the **Slots & flow** tab lets organisers move any person or team to another slot (it's then locked) and
+shows who still needs a slot and why.
+
+**Live notice.** On the event day each participant gets one pinned notification (and a strip at the top of the app,
+plus a phone notification when allowed) that updates itself every time a slot ends or a task is scanned: what's over
+and what's next for them. It disappears when the event is completed.
 
 **Certificates.** A classic A4 design rendered on the server: the college's own logo, a signature (a photo of a
 signature on paper is cleaned up automatically), signatory name and title, a verification QR and a seal. Students
@@ -117,14 +130,15 @@ codes, waitlist with automatic promotion, UPI checkout (QR + UTR + screenshot), 
 personal slots, cancellation with refund requests, certificates with public verification links, month calendar, and
 **winners** (1st / 2nd / 3rd / special mention, per person or whole team) with a podium on the event page and certificates of achievement.
 
-**Fests (many events under one name).** Create a fest like *TechTrove 3.0* and group its events into tracks such as
-Technical, Non-technical and Sports. Each track is priced either **per event** or with **one pass** that covers every
-event in it; each event can charge **per person** or **per team** (the captain pays, teammates join free). One click
-adds the poster-style Technical · Non-technical · Sports layout (24 events) that you can edit. Students tick several
-events, enter team names and pay **once**; each event still gets its own QR ticket, check-in desk, winners and
-certificates. The college gets a fest control room (all tracks and events, combined payments approved per order,
-updates to every participant, one check-in desk that accepts any of the fest's tickets). Cancelling the ticket that
-carries a pass or a team fee also cancels the events that depended on it.
+**Fests (many events under one name).** Create a fest like *TechTrove 3.0* with the step-by-step creator: name,
+banner and description first, then dates, then **the events inside it** (quick-add chips or your own, nothing is
+added for you), their time slots, and the event-day order. Group events into tracks such as Technical, Non-technical
+and Sports; each track is priced either **per event** or with **one pass** that covers every event in it, and each
+event can charge **per person** or **per team** (the captain pays, teammates join free). Events can be added, edited
+or removed later (tick several to remove them at once). Students tick several events, enter team names and pay
+**once**, and get **one fest ticket** with all their events as tasks. The college gets a fest control room (all
+tracks and events, one line per payment order, approved per order, updates to every participant, slots & flow, and
+the three desks). Cancelling the ticket that carries a pass or a team fee also cancels the events that depended on it.
 
 **Rewards.** Points for every confirmed registration (+50 paid, +20 free), check-in (+30) and wins (+250 / +150 / +100 / +50).
 Spend them at checkout (1 point = ₹1 off, up to 50% of a ticket). Levels from Rookie to Legend, a history and a leaderboard.
@@ -214,9 +228,13 @@ Fests and events are also available as JSON at `/api/events/<id>` for native scr
 ```
 app.py            app factory, sessions, CSRF, maintenance gate, media serving
 render.yaml       Render Blueprint (web app + PostgreSQL database)
-db.py             database layer: PostgreSQL (Render) or SQLite (local), schema (27 tables), query translation
+db.py             database layer: PostgreSQL (Render) or SQLite (local), schema (32 tables), query translation
 tools/            reset_db.py, make_seed_media.py
-core.py           permissions & hierarchy, notifications, uploads, settings, formatting, food & slot logic
+core.py           permissions & hierarchy, notifications, uploads, settings, formatting, food logic
+scheduler.py      time slots, the slot allocator and the event-day order
+journey.py        the ticket's task list and the signed, slot-locked QR codes
+live.py           the live event-day notice
+fest.py           fest pricing (tracks, passes, team fees)
 ai_agent.py       assistant: Claude (optional) + offline intent / TF-IDF engine
 seed.py           developer account + demo community
 blueprints/       auth · social · events · studio · dev · api

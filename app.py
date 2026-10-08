@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import sys
+import time
 from datetime import datetime
 
 from flask import (Flask, g, session, request, redirect, url_for, render_template, flash, jsonify,
@@ -73,12 +74,14 @@ def create_app():
         db.create_schema()
         from seed import seed
         seed(app)
+        import scheduler
+        scheduler.backfill()          # events from before time slots existed get theirs
 
     # ------------------------------------------------------------ hooks
     @app.before_request
     def load_user():
         g.user = None
-        if request.endpoint in ("static", "media", "manifest", "healthz"):
+        if request.endpoint in ("static", "media", "manifest", "healthz", "service_worker"):
             return  # files never need the database (saves a database round trip per image)
         uid = session.get("uid")
         if uid:
@@ -95,7 +98,7 @@ def create_app():
 
     @app.before_request
     def maintenance_gate():
-        if request.endpoint in ("static", "media", "auth.login", "auth.logout") or (g.user and g.user["role"] == "dev"):
+        if request.endpoint in ("static", "media", "service_worker", "auth.login", "auth.logout") or (g.user and g.user["role"] == "dev"):
             return None
         if core.setting("maintenance") == "1":
             return render_template("maintenance.html"), 503
@@ -114,7 +117,7 @@ def create_app():
         return redirect(request.referrer or url_for("social.home"))
 
     static = os.path.join(app.root_path, "static")
-    ASSET_V = int(max(os.path.getmtime(os.path.join(static, f)) for f in ("css/app.css", "js/app.js")))
+    ASSET_V = int(max(os.path.getmtime(os.path.join(static, f)) for f in ("css/app.css", "js/app.js", "js/wizard.js")))
 
     @app.context_processor
     def inject():
@@ -129,7 +132,7 @@ def create_app():
             "setting": core.setting,
             "CATEGORIES": core.CATEGORIES,
             "unread_notifs": 0, "unread_msgs": 0, "friend_requests": 0, "is_studio": False, "my_points": None,
-            "theme": "system",
+            "theme": "system", "asset_v": ASSET_V, "live_now": [],
         }
         if g.get("user"):
             uid = g.user["id"]
@@ -144,6 +147,12 @@ def create_app():
             )
             if g.user["role"] == "student":
                 ctx["my_points"] = core.points_summary(uid)
+                import live
+                if time.time() - session.get("_live_t", 0) > 30:
+                    ctx["live_now"] = live.refresh_user(uid)
+                    session["_live_t"] = time.time()
+                else:
+                    ctx["live_now"] = live.current_for(uid)
         return ctx
 
     # ------------------------------------------------------------ media & app shell
@@ -204,6 +213,26 @@ def create_app():
             "background_color": "#0F1424", "theme_color": "#0F1424",
             "icons": [{"src": url_for("static", filename="img/icon.png"), "sizes": "512x512", "type": "image/png"}],
         })
+
+    SW_JS = """// EventFlow service worker: only shows the live event-day notice and opens it when tapped. No caching.
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "/";
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    for (const c of list) { if ("focus" in c) { c.navigate(url).catch(() => {}); return c.focus(); } }
+    return self.clients.openWindow(url);
+  }));
+});
+"""
+
+    @app.route("/sw.js")
+    def service_worker():
+        resp = app.response_class(SW_JS, mimetype="application/javascript")
+        resp.headers["Service-Worker-Allowed"] = "/"
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
 
     @app.route("/healthz")
     def healthz():

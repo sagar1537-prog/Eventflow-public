@@ -1,120 +1,170 @@
 {% extends "base.html" %}
 {% from "partials/macros.html" import icon with context %}
-{% set editing = e.id is defined and e.id %}
-{% set is_fest = (e.kind is defined and e.kind == 'fest') %}
-{% set is_sub = (e.parent_id is defined and e.parent_id) %}
-{% block title %}{{ "Edit event" if editing else "New event" }}{% endblock %}
+{% set editing = mode == 'edit' %}
+{% set is_fest = (e.kind == 'fest') %}
+{% set is_sub = e.parent_id is defined and e.parent_id %}
+{% block title %}{{ "Edit " ~ e.title if editing else "Create" }}{% endblock %}
+{% block body_class %}no-fab-sm{% endblock %}
+{% block assistant %}{% endblock %}
 {% block content %}
 {% macro dtval(v) %}{{ (v or "")[:16]|replace(" ", "T") }}{% endmacro %}
-<div class="page wide page-enter">
-  <div class="head-row"><div><h1>{{ "Edit " ~ e.title if editing else "Create an event or fest" }}</h1><p>{{ "Changes go live straight away." if editing else "Publish it now or save a draft. You can add a schedule after." }}</p></div></div>
-  {% include "studio/_nav.html" %}
-  <form method="post" enctype="multipart/form-data" class="cols-2" style="align-items:start">
+<div class="page wizard-page page-enter">
+  <div class="wiz-top">
+    <a class="iconbtn" href="{{ url_for('studio.event', eid=e.id) if editing else url_for('studio.overview') }}" aria-label="Close">{{ icon("x") }}</a>
+    <div class="grow">
+      <small class="wiz-kicker">{{ ("Edit " ~ ("fest" if is_fest else "event")) if editing else "Create" }}</small>
+      <h1 class="wiz-title" data-wiz-heading>{{ e.title if editing else "Let's set it up" }}</h1>
+    </div>
+  </div>
+  {% if is_sub %}<a class="fest-parent" href="{{ url_for('studio.event', eid=e.parent_id) }}"><span class="e">🎪</span>Part of {{ parent_title }}{{ icon("right", "ico sm") }}</a>{% endif %}
+
+  <div class="wiz-progress" aria-hidden="true"><i data-wiz-bar></i></div>
+  <ol class="wiz-dots" data-wiz-dots></ol>
+
+  <form class="wizard" method="post" enctype="multipart/form-data" data-mode="{{ mode }}" data-kind="{{ wiz.kind }}" novalidate>
     {{ csrf_field() }}
-    <div class="stack-lg">
+    <input type="hidden" name="fest_json" value="{{ wiz.fest_json }}">
+    <input type="hidden" name="slots_json" value="{{ wiz.slots_json }}">
+    <input type="hidden" name="flow_json" value="{{ wiz.flow_json }}">
+    {% if not editing %}<input type="hidden" name="meals_count" value="{{ e.meals_count or 0 }}" data-meals-count>{% endif %}
+
+    <div class="wiz-stage">
+    <!-- 1. basics -->
+    <section class="wiz-step" data-step="basics" data-label="Basics">
+      <h2>What are you hosting?</h2>
       {% if not editing %}
-      <section class="card pad-lg">
-        <h3>What are you hosting?</h3>
-        <div class="kind-pick">
-          <label class="kind-tile"><input type="radio" name="kind" value="event" {{ 'checked' if not is_fest }}><span class="kt-emoji">🎟️</span><b>Single event</b><small>One hackathon, workshop or show with one ticket.</small></label>
-          <label class="kind-tile"><input type="radio" name="kind" value="fest" {{ 'checked' if is_fest }}><span class="kt-emoji">🎪</span><b>Fest · many events</b><small>A symposium with Technical, Non-technical and Sports events, each with its own fee.</small></label>
-        </div>
-        <label class="check fest-only" style="margin-top:12px"><input type="checkbox" name="template" value="1" checked> Start with the Technical · Non-technical · Sports layout (24 events, all editable)</label>
-      </section>
+      <div class="kind-pick big">
+        <label class="kind-tile"><input type="radio" name="kind" value="event" {{ 'checked' if wiz.kind != 'fest' }}><span class="kt-emoji">🎟️</span><b>A single event</b><small>One hackathon, workshop, quiz or show. One ticket.</small></label>
+        <label class="kind-tile"><input type="radio" name="kind" value="fest" {{ 'checked' if wiz.kind == 'fest' }}><span class="kt-emoji">🎪</span><b>A fest with many events</b><small>A symposium or fest. You add the events inside it next. Students get one ticket for all theirs.</small></label>
+      </div>
       {% endif %}
-      {% if is_sub %}<a class="fest-parent" href="{{ url_for('studio.event', eid=e.parent_id) }}"><span class="e">🎪</span>Part of {{ parent_title }}{{ icon("right", "ico sm") }}</a>{% endif %}
-      <section class="card pad-lg">
-        <h3>Banner</h3>
-        <label class="dropzone" style="padding:0;overflow:hidden;aspect-ratio:16/9;display:grid;place-items:center">
+      <div class="field"><label for="title"><span data-fest-word>{{ "Fest" if is_fest else "Event" }}</span> name</label>
+        <input id="title" name="title" value="{{ e.title or '' }}" required maxlength="120" placeholder="{{ 'N-CORE 2026' if is_fest else 'HackArunai 24H' }}" data-wiz-name></div>
+      <div class="banner-pick">
+        <label class="dropzone banner-drop">
           <input type="file" name="banner" accept="image/*" data-preview="#banner-prev">
-          <img id="banner-prev" {% if e.banner %}src="{{ url_for('media', rel=e.banner) }}"{% else %}hidden{% endif %} alt="" style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0">
-          <span style="position:relative"><span style="font-size:2rem">🖼️</span><br><b>Upload a 16:9 banner</b><br><span class="muted small">JPG or PNG, up to 10 MB</span></span>
+          <img id="banner-prev" {% if e.banner %}src="{{ url_for('media', rel=e.banner) }}"{% else %}hidden{% endif %} alt="">
+          <span class="bd-hint"><span style="font-size:1.8rem">🖼️</span><b>Add a banner</b><small>16:9 image, up to 10 MB</small></span>
         </label>
         {% if e.banner %}<label class="check small" style="margin-top:8px"><input type="checkbox" name="remove_banner"> Remove banner</label>{% endif %}
-      </section>
-      <section class="card pad-lg">
-        <h3>Basics</h3>
-        <div class="field"><label for="title">{{ "Fest name" if is_fest else "Event name" }}</label><input id="title" name="title" value="{{ e.title or '' }}" required maxlength="120" placeholder="{{ 'TechTrove 3.0' if is_fest else 'HackArunai 24H' }}"></div>
-        <div class="field"><label for="tagline">One-line pitch</label><input id="tagline" name="tagline" value="{{ e.tagline or '' }}" maxlength="160" placeholder="What makes it worth coming?"></div>
-        <div class="field"><label for="description">Description <span class="hint">#tags and **bold** work</span></label><textarea id="description" name="description" style="min-height:160px">{{ e.description or '' }}</textarea></div>
+      </div>
+      <div class="field"><label for="tagline">One-line pitch <span class="hint">optional</span></label><input id="tagline" name="tagline" value="{{ e.tagline or '' }}" maxlength="160" placeholder="What makes it worth coming?"></div>
+      <div class="field"><label for="description">Description <span class="hint">#tags and **bold** work</span></label><textarea id="description" name="description" style="min-height:130px" placeholder="Rules, prizes, who it's for…">{{ e.description or '' }}</textarea></div>
+      <div class="field"><label for="category">Type</label>
+        <div class="cat-pick">{% for c in CATEGORIES %}<label><input type="radio" name="category" value="{{ c }}" {{ 'checked' if (e.category or 'Technical') == c }}><span>{{ c|cat_emoji }} {{ c }}</span></label>{% endfor %}</div></div>
+    </section>
+
+    <!-- 2. when & where -->
+    <section class="wiz-step" data-step="when" data-label="When &amp; where">
+      <h2>When and where?</h2>
+      <div class="grid-2">
+        <div class="field"><label for="start_dt">Starts</label><input id="start_dt" name="start_dt" type="datetime-local" value="{{ dtval(e.start_dt) }}" required></div>
+        <div class="field"><label for="end_dt">Ends</label><input id="end_dt" name="end_dt" type="datetime-local" value="{{ dtval(e.end_dt) }}" required></div>
+      </div>
+      <div class="field"><label for="reg_deadline">Registration closes <span class="hint">optional</span></label><input id="reg_deadline" name="reg_deadline" type="datetime-local" value="{{ dtval(e.reg_deadline) }}"></div>
+      <div class="grid-2">
+        <div class="field"><label for="venue">Venue</label><input id="venue" name="venue" value="{{ e.venue or '' }}" required placeholder="Main Auditorium"></div>
+        <div class="field"><label for="city">City</label><input id="city" name="city" value="{{ e.city or '' }}"></div>
+      </div>
+      <div class="field"><label for="venue_details">Directions <span class="hint">optional</span></label><input id="venue_details" name="venue_details" value="{{ e.venue_details or '' }}" placeholder="Block A, ground floor. Enter via Gate 2."></div>
+      <div class="field"><label for="map_url">Google Maps link <span class="hint">optional</span></label><input id="map_url" name="map_url" type="url" value="{{ e.map_url or '' }}" placeholder="https://maps.google.com/…"></div>
+    </section>
+
+    <!-- 3. tickets (a single event, or one event inside a fest) -->
+    <section class="wiz-step" data-step="tickets" data-label="Tickets" data-only="event">
+      <h2>Tickets</h2>
+      {% if is_sub %}
+      <div class="grid-2">
+        <div class="field"><label for="track_id">Group</label><select id="track_id" name="track_id">{% for t in tracks %}<option value="{{ t.id }}" {{ 'selected' if e.track_id == t.id }}>{{ t.emoji }} {{ t.name }}{% if t.pricing == 'pass' %} (pass){% endif %}</option>{% endfor %}</select></div>
+        <div class="field"><label for="fee_type">Fee is</label><select id="fee_type" name="fee_type"><option value="person" {{ 'selected' if e.fee_type != 'team' }}>Per person</option><option value="team" {{ 'selected' if e.fee_type == 'team' }}>Per team (captain pays)</option></select></div>
+      </div>
+      <div class="field"><label for="label">Tag <span class="hint">optional, e.g. Boys only</span></label><input id="label" name="label" maxlength="40" value="{{ e.label or '' }}"></div>
+      {% endif %}
+      <div class="grid-3">
+        <div class="field"><label for="fee">Price (₹) <span class="hint">0 = free</span></label><input id="fee" name="fee" type="number" min="0" step="1" value="{{ e.fee or 0 }}"></div>
+        <div class="field"><label for="capacity">Seats</label><input id="capacity" name="capacity" type="number" min="1" value="{{ e.capacity or 100 }}" data-seats></div>
+        <div class="field"><label for="team_size">Team size</label><select id="team_size" name="team_size">{% for n in range(1, 11) %}<option value="{{ n }}" {{ 'selected' if (e.team_size or 1) == n }}>{{ "Solo" if n == 1 else "Up to " ~ n }}</option>{% endfor %}</select></div>
+      </div>
+      {% if g.user.role == 'college' and not g.user.upi_id %}<p class="small" style="color:#B7791F">Add your UPI ID in <a class="link" href="{{ url_for('social.settings', tab='payments') }}">Settings → Payments</a> to sell paid tickets.</p>{% endif %}
+      <p class="tiny muted mb-0">EventFlow keeps a {{ setting('platform_fee_pct') }}% platform fee on paid tickets.</p>
+    </section>
+
+    {% if not editing %}
+    <!-- 4. events inside the fest -->
+    <section class="wiz-step" data-step="events" data-label="Events inside" data-only="fest">
+      <h2>Which events are in the fest?</h2>
+      <p class="muted">Add each event. Group them if they're priced together (e.g. one pass for all technical events). Nothing is added for you, so you only get the events you want.</p>
+      <div class="quick-add"><small class="muted">Quick add:</small>
+        {% for q_ in ["Hackathon", "Paper Presentation", "Tech Quiz", "Debugging", "Tech Maze", "Project Expo", "Coding Contest", "Dance", "Singing", "Treasure Hunt", "Gaming"] %}<button type="button" class="chip-btn" data-quick="{{ q_ }}">+ {{ q_ }}</button>{% endfor %}
+      </div>
+      <div class="fest-builder" data-fest-builder></div>
+      <button type="button" class="btn ghost" data-add-track>{{ icon("plus", "ico sm") }}Add another group</button>
+    </section>
+
+    <!-- 5. time slots -->
+    <section class="wiz-step" data-step="slots" data-label="Time slots">
+      <h2>Time slots</h2>
+      <p class="muted" data-slots-intro></p>
+      <div class="slot-builder" data-slot-builder></div>
+    </section>
+
+    <!-- 6. event-day flow -->
+    <section class="wiz-step" data-step="flow" data-label="Event day">
+      <h2>The event day, in order</h2>
+      <p class="muted">This is each participant's task list. Entry is always first; drag the rest into the order you want. A meal with a time sits where its time falls in each person's day.</p>
+      <ol class="flow-list" data-flow-builder></ol>
+      <button type="button" class="btn soft" data-add-meal-wiz>{{ icon("plus", "ico sm") }}Add a meal</button>
+      <div class="food-money card">
+        <b>🍽️ Food budget</b>
         <div class="grid-2">
-          <div class="field"><label for="category">Category</label><select id="category" name="category">{% for c in CATEGORIES %}<option {{ 'selected' if e.category == c }}>{{ c }}</option>{% endfor %}</select></div>
-          <div class="field"><label for="status">Visibility</label><select id="status" name="status">
-            {% for v, l in [("draft", "Draft (hidden)"), ("open", "Open for registration"), ("closed", "Registration closed"), ("completed", "Completed")] %}<option value="{{ v }}" {{ 'selected' if e.status == v }}>{{ l }}</option>{% endfor %}</select></div>
+          <div class="field"><label for="food_cost_per_head">₹ per plate</label><input id="food_cost_per_head" name="food_cost_per_head" type="number" min="0" value="{{ (e.food_cost_per_head or 0)|int }}"></div>
+          <div class="field"><label for="food_buffer_pct">Buffer %</label><input id="food_buffer_pct" name="food_buffer_pct" type="number" min="0" value="{{ (e.food_buffer_pct or 0)|int }}"></div>
         </div>
-      </section>
-      <section class="card pad-lg">
-        <h3>When and where</h3>
-        <div class="grid-2">
-          <div class="field"><label for="start_dt">Starts</label><input id="start_dt" name="start_dt" type="datetime-local" value="{{ dtval(e.start_dt) }}" required></div>
-          <div class="field"><label for="end_dt">Ends</label><input id="end_dt" name="end_dt" type="datetime-local" value="{{ dtval(e.end_dt) }}" required></div>
-        </div>
-        <div class="grid-2">
-          <div class="field"><label for="venue">Venue</label><input id="venue" name="venue" value="{{ e.venue or '' }}" required placeholder="Main Auditorium"></div>
-          <div class="field"><label for="city">City</label><input id="city" name="city" value="{{ e.city or '' }}"></div>
-        </div>
-        <div class="field"><label for="venue_details">Directions</label><input id="venue_details" name="venue_details" value="{{ e.venue_details or '' }}" placeholder="Block A, ground floor. Enter via Gate 2."></div>
-        <div class="field"><label for="map_url">Google Maps link <span class="hint">(optional)</span></label><input id="map_url" name="map_url" type="url" value="{{ e.map_url or '' }}" placeholder="https://maps.google.com/…"></div>
-      </section>
-    </div>
-    <div class="stack-lg" style="position:sticky;top:24px">
-      <section class="card pad-lg fest-only">
-        <h3>Tickets for a fest</h3>
-        <p class="muted small mb-0">Prices, seats and team sizes are set for each event inside the fest: a track pass (one fee for every event in it), a fee per event, or a fee per team. {% if editing %}Manage them on the fest's Studio page.{% else %}You'll set them up right after this.{% endif %}</p>
-      </section>
-      <section class="card pad-lg event-only">
-        <h3>Tickets</h3>
-        {% if is_sub %}
-        <div class="grid-2">
-          <div class="field"><label for="track_id">Track</label><select id="track_id" name="track_id">{% for t in tracks %}<option value="{{ t.id }}" {{ 'selected' if e.track_id == t.id }}>{{ t.emoji }} {{ t.name }}{% if t.pricing == 'pass' %} (pass){% endif %}</option>{% endfor %}</select></div>
-          <div class="field"><label for="fee_type">Fee is</label><select id="fee_type" name="fee_type"><option value="person" {{ 'selected' if e.fee_type != 'team' }}>Per person</option><option value="team" {{ 'selected' if e.fee_type == 'team' }}>Per team (captain pays)</option></select></div>
-        </div>
-        <div class="field"><label for="label">Tag <span class="hint">(optional, e.g. Boys only)</span></label><input id="label" name="label" maxlength="40" value="{{ e.label or '' }}"></div>
-        {% endif %}
-        <div class="grid-2">
-          <div class="field"><label for="fee">Price (₹) <span class="hint">0 = free</span></label><input id="fee" name="fee" type="number" min="0" step="1" value="{{ e.fee or 0 }}"></div>
-          <div class="field"><label for="capacity">Seats</label><input id="capacity" name="capacity" type="number" min="1" value="{{ e.capacity or 100 }}"></div>
-        </div>
-        <div class="grid-2">
-          <div class="field"><label for="team_size">Team size</label><select id="team_size" name="team_size">{% for n in range(1, 11) %}<option value="{{ n }}" {{ 'selected' if (e.team_size or 1) == n }}>{{ "Solo" if n == 1 else "Up to " ~ n }}</option>{% endfor %}</select></div>
-          <div class="field"><label for="reg_deadline">Registration closes</label><input id="reg_deadline" name="reg_deadline" type="datetime-local" value="{{ dtval(e.reg_deadline) }}"></div>
-        </div>
-        {% if g.user.role == 'college' and not g.user.upi_id %}<p class="small" style="color:#B7791F">Add your UPI ID in <a class="link" href="{{ url_for('social.settings', tab='payments') }}">Settings → Payments</a> to sell paid tickets.</p>{% endif %}
-        <p class="tiny muted mb-0">EventFlow keeps a {{ setting('platform_fee_pct') }}% platform fee on paid tickets.</p>
-      </section>
-      <section class="card pad-lg">
-        <h3>Food plan</h3>
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- 7. publish -->
+    <section class="wiz-step" data-step="publish" data-label="{{ 'Save' if editing else 'Publish' }}">
+      <h2>{{ "Save your changes" if editing else "Ready to go?" }}</h2>
+      {% if editing %}
+      <div class="field"><label for="status">Status</label><select id="status" name="status">
+        {% for v, l in [("draft", "Draft (hidden)"), ("open", "Open for registration"), ("closed", "Registration closed"), ("completed", "Completed (clears everyone's live notice)")] %}<option value="{{ v }}" {{ 'selected' if e.status == v }}>{{ l }}</option>{% endfor %}</select></div>
+      <div class="food-money card">
+        <b>🍽️ Food</b>
         <div class="grid-3">
           <div class="field"><label for="meals_count">Meals</label><input id="meals_count" name="meals_count" type="number" min="0" value="{{ e.meals_count or 0 }}"></div>
           <div class="field"><label for="food_cost_per_head">₹/plate</label><input id="food_cost_per_head" name="food_cost_per_head" type="number" min="0" value="{{ (e.food_cost_per_head or 0)|int }}"></div>
           <div class="field"><label for="food_buffer_pct">Buffer %</label><input id="food_buffer_pct" name="food_buffer_pct" type="number" min="0" value="{{ (e.food_buffer_pct or 0)|int }}"></div>
         </div>
-      </section>
-      <div class="row">
-        <button class="btn brand lg" type="submit">{{ "Save changes" if editing else "Create event" }}</button>
-        <a class="btn ghost lg" href="{{ url_for('studio.event', eid=e.id) if editing else url_for('studio.overview') }}">Cancel</a>
+        <p class="tiny muted mb-0">Time slots, meals and the event-day order are changed on the {{ "fest's" if is_sub else "" }} <b>Slots &amp; flow</b> tab.</p>
       </div>
+      {% else %}
+      <div class="kind-pick">
+        <label class="kind-tile"><input type="radio" name="status" value="open" {{ 'checked' if e.status != 'draft' }}><span class="kt-emoji">🚀</span><b>Publish now</b><small>Open for registration. Your followers are notified.</small></label>
+        <label class="kind-tile"><input type="radio" name="status" value="draft" {{ 'checked' if e.status == 'draft' }}><span class="kt-emoji">📝</span><b>Save as draft</b><small>Hidden until you open it.</small></label>
+      </div>
+      {% endif %}
+      <div class="wiz-summary" data-wiz-summary></div>
+    </section>
+
     </div>
+    <p class="wiz-err" data-wiz-err role="alert" hidden></p>
+    <footer class="wiz-nav">
+      <button type="button" class="btn ghost" data-wiz-back>{{ icon("left", "ico sm") }}Back</button>
+      <span class="wiz-count" data-wiz-count></span>
+      <button type="button" class="btn brand" data-wiz-next>Next{{ icon("right", "ico sm") }}</button>
+      <button type="submit" class="btn brand" data-wiz-submit hidden>{{ icon("check", "ico sm") }}{{ "Save changes" if editing else "Create" }}</button>
+    </footer>
   </form>
-  {% if editing and (g.user.role in ('college', 'dev')) %}
-  <form method="post" action="{{ url_for('studio.event_delete', eid=e.id) }}" data-confirm="Delete {{ e.title }} and everything attached to it? This can't be undone." style="margin-top:28px">
-    {{ csrf_field() }}<button class="btn danger">{{ icon("trash", "ico sm") }}Delete {{ "fest and all its events" if is_fest else "event" }}</button></form>
+
+  {% if editing and g.user.role in ('college', 'dev') %}
+  <form method="post" action="{{ url_for('studio.event_delete', eid=e.id) }}" data-confirm="Delete {{ e.title }} and everything attached to it? This can't be undone." style="margin-top:28px" class="center">
+    {{ csrf_field() }}<button class="btn danger-soft sm">{{ icon("trash", "ico sm") }}Delete {{ "fest and all its events" if is_fest else "event" }}</button></form>
   {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
-(() => {
-  const form = document.querySelector("form.cols-2"), fixed = {{ 'true' if is_fest else 'false' }};
-  const apply = () => {
-    const r = form.querySelector("input[name=kind]:checked"), fest = r ? r.value === "fest" : fixed;
-    form.querySelectorAll(".fest-only").forEach((el) => { el.hidden = !fest; });
-    form.querySelectorAll(".event-only").forEach((el) => { el.hidden = fest; });
-    const t = form.querySelector("#title"); if (t && !t.value) t.placeholder = fest ? "TechTrove 3.0" : "HackArunai 24H";
-    const c = form.querySelector("#category"); if (fest && r && c.value === "Technical") c.value = "Fest";
-  };
-  form.querySelectorAll("input[name=kind]").forEach((i) => i.addEventListener("change", apply));
-  apply();
-})();
-</script>
+<script>window.EF_WIZ = {{ {"categories": CATEGORIES|list, "upi": ((g.user.upi_id or '')|length > 0) if g.user.role == 'college' else true}|tojson }};</script>
+<script src="{{ url_for('static', filename='js/wizard.js') }}?v={{ asset_v }}"></script>
 {% endblock %}

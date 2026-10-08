@@ -34,7 +34,7 @@
   <nav class="tabs" data-panes>
     <a href="#registrations">Registrations <span class="n">{{ regs|length }}</span></a>
     <a href="#payments">Payments {% if stats.review %}<span class="n" style="background:var(--rose);color:#fff">{{ stats.review }}</span>{% endif %}</a>
-    <a href="#slots">Slots</a>
+    <a href="#slots">{{ "Slots" if e.parent_id else "Slots & flow" }}{% if bd.unplaced %} <span class="n" style="background:var(--amber,#F5A524);color:#fff">{{ bd.unplaced }}</span>{% endif %}</a>
     <a href="#schedule">Schedule</a>
     <a href="#food">Food</a>
     <a href="#coupons">Coupons</a>
@@ -61,13 +61,8 @@
             <td>{{ {"veg": "🥗", "nonveg": "🍗", "none": "—"}[r.food_pref] }}</td>
             <td>{{ reg_pill(r.status, r.pay_status) }}</td>
             <td>
-              {% if r.status == 'confirmed' and lead %}
-              <details><summary style="cursor:pointer;list-style:none">{% if r.slot_start %}<b>{{ r.slot_start|time }}</b> <span class="muted small">{{ r.slot_venue }}</span>{% else %}<span class="muted small">Set slot</span>{% endif %}</summary>
-                <form method="post" action="{{ url_for('studio.slot', rid=r.id) }}" style="display:grid;gap:6px;margin-top:8px;min-width:220px">{{ csrf_field() }}
-                  <input type="datetime-local" name="slot_start" value="{{ (r.slot_start or '')[:16] }}" aria-label="Slot start">
-                  <input type="datetime-local" name="slot_end" value="{{ (r.slot_end or '')[:16] }}" aria-label="Slot end">
-                  <input name="slot_venue" value="{{ r.slot_venue or '' }}" placeholder="Room" aria-label="Room"><button class="btn sm">Save & notify</button></form></details>
-              {% elif r.slot_start %}{{ r.slot_start|time }} · {{ r.slot_venue }}{% else %}—{% endif %}
+              {% if r.status == 'confirmed' and r.slot_start %}<a class="slot-chip" href="#slots"><b>{{ r.slot_start|time }}</b><small>{{ r.slot_venue or '' }}</small>{% if r.slot_locked %} 🔒{% endif %}</a>
+              {% elif r.status == 'confirmed' %}<a class="pill amber" href="#slots">Needs a slot</a>{% else %}—{% endif %}
             </td>
             <td>{% if r.status == 'confirmed' %}<form method="post" action="{{ url_for('studio.attendance', rid=r.id) }}">{{ csrf_field() }}
               <button class="tick {{ 'on' if r.attended }}" title="{{ 'Checked in ' ~ (r.checkin_time|time) if r.attended else 'Mark present' }}" aria-label="Toggle attendance for {{ r.name }}" data-noload>✓</button></form>{% endif %}</td>
@@ -92,7 +87,7 @@
         {% for p in payments %}
           <tr>
             <td class="person"><span><b>{{ p.name }}</b><small>@{{ p.username }}{% if p.phone %} · {{ p.phone }}{% endif %} · {{ p.created_at|rel }}</small></span></td>
-            <td class="r"><b>{{ p.amount|inr }}</b>{% if p.discount %}<br><small class="muted">−{{ p.discount|inr }} coupon</small>{% endif %}{% if p.points_used %}<br><small class="muted">−{{ p.points_used|inr }} points</small>{% endif %}</td>
+            <td class="r"><b>{{ p.amount|inr }}</b>{% if not p.amount and p.bundle %}<br><small class="muted">in order {{ p.bundle }}</small>{% endif %}{% if p.discount %}<br><small class="muted">−{{ p.discount|inr }} coupon</small>{% endif %}{% if p.points_used %}<br><small class="muted">−{{ p.points_used|inr }} points</small>{% endif %}</td>
             <td>{{ {"upi": "UPI", "demo": "Demo", "free": "Free"}[p.method] }}</td>
             <td class="num">{{ p.utr or "—" }}</td>
             <td>{% if p.screenshot %}<a class="link small" href="{{ url_for('media', rel=p.screenshot) }}" target="_blank" rel="noopener">Screenshot</a>{% else %}—{% endif %}</td>
@@ -116,68 +111,7 @@
 
   <!-- slots -->
   <section class="tab-pane" id="slots">
-    <form class="card pad-lg" method="post" action="{{ url_for('studio.slots', eid=e.id) }}">
-      {{ csrf_field() }}
-      <div class="row between" style="align-items:flex-start"><div><h3>Smart slot planner</h3>
-        <p class="muted-2 small" style="max-width:640px">Gives every participant a personal time and room. Teams stay together. Nobody gets a slot that clashes with
-          their other events' slots or the busy times they marked on their ticket{% if busy_count %} (<b>{{ busy_count }}</b> people marked busy times){% endif %}. The people hardest to fit are placed first,
-          breaks are skipped, and slots you changed by hand (🔒) stay as they are.</p></div>
-        <span class="pill blue">{{ stats.registered }} confirmed</span></div>
-      <div class="grid-3">
-        <div class="field"><label for="slot_start">First slot</label><input id="slot_start" name="slot_start" type="datetime-local" value="{{ default_start }}" required></div>
-        <div class="field"><label for="slot_finish">Finish by <span class="hint">optional</span></label><input id="slot_finish" name="slot_finish" type="datetime-local" value="{{ default_finish }}"></div>
-        <div class="field"><label for="rooms">Rooms <span class="hint">comma separated, one team per room at a time</span></label><input id="rooms" name="rooms" value="{{ sessions|map(attribute='room')|unique|join(', ') if sessions else e.venue }}"></div>
-        <div class="field"><label for="duration">Minutes each</label><input id="duration" name="duration" type="number" min="1" max="600" value="10"></div>
-        <div class="field"><label for="gap">Gap between slots (min)</label><input id="gap" name="gap" type="number" min="0" max="240" value="5"></div>
-        <div class="field"><label for="buffer">Walking buffer around other commitments (min)</label><input id="buffer" name="buffer" type="number" min="0" max="240" value="10"></div>
-      </div>
-      <div class="field"><label for="breaks">Breaks <span class="hint">no slots during these, e.g. 13:00-14:00, 16:00-16:15</span></label><input id="breaks" name="breaks" placeholder="13:00-14:00"></div>
-      <div class="row" style="gap:18px;flex-wrap:wrap">
-        <label class="check"><input type="checkbox" name="keep_locked" checked> Keep slots I changed by hand</label>
-        <label class="check"><input type="checkbox" name="announce" checked> Post a pinned "your slots are out" update</label>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn ghost" name="action" value="preview" {{ 'disabled' if not stats.registered or not lead }}>{{ icon("eye", "ico sm") }}Preview plan</button>
-        <button class="btn brand" name="action" value="apply" {{ 'disabled' if not stats.registered or not lead }}>{{ icon("clock", "ico sm") }}Allocate slots &amp; notify</button>
-      </div>
-    </form>
-
-    <section class="card pad-lg" style="margin-top:18px">
-      <div class="card-head"><h3>Slot sessions</h3>{% if sessions %}<a class="btn soft sm" href="{{ url_for('studio.scan_station', eid=e.id, station='slot') }}">{{ icon("scan", "ico sm") }}Slot scanner</a>{% endif %}</div>
-      {% if sessions %}
-      <div class="sessions">
-        {% for sx in sessions %}
-        <div class="session">
-          <div class="s-when"><b>{{ sx.start|time }}</b><small>{{ sx.start|dt("%a %d %b") }} · till {{ sx.end|time }}</small><span class="pill">{{ sx.room }}</span></div>
-          <div class="s-who">
-            {% for unit in sx.members|groupby('team_name') %}
-              {% set first = unit.list[0] %}
-              <div class="s-unit">
-                <span class="grow"><b>{{ ("Team " ~ unit.grouper) if unit.grouper else first.name }}</b>{% if first.slot_locked %} <span title="Changed by hand: re-planning keeps it">🔒</span>{% endif %}
-                  <small>{% for m in unit.list %}{{ m.name }}{{ " ✓" if m.slot_in_at }}{% if not loop.last %}, {% endif %}{% endfor %}</small></span>
-                {% if lead %}
-                <details class="move"><summary class="btn ghost sm">Change slot</summary>
-                  <form method="post" action="{{ url_for('studio.slot_move', eid=e.id) }}" class="move-form">
-                    {{ csrf_field() }}<input type="hidden" name="rid" value="{{ first.id }}">
-                    <label class="small muted">Move {{ "the whole team" if unit.grouper else "them" }} to</label>
-                    <select name="target" data-move-target>
-                      {% for other in sessions if other.key != sx.key %}<option value="{{ other.key }}">{{ other.start|time }} · {{ other.room }} ({{ other.members|length }} booked)</option>{% endfor %}
-                      <option value="custom">A new time / room…</option>
-                    </select>
-                    <div class="row nw move-custom" hidden><input type="datetime-local" name="new_start" value="{{ (sx.start or '')[:16] }}" aria-label="New time"><input name="new_room" placeholder="Room" value="{{ sx.room }}" aria-label="New room"></div>
-                    <button class="btn brand sm">Move &amp; notify</button>
-                  </form>
-                  {% if first.slot_locked %}<form method="post" action="{{ url_for('studio.slot_unlock', eid=e.id) }}">{{ csrf_field() }}<input type="hidden" name="rid" value="{{ first.id }}"><button class="btn ghost sm">Unlock</button></form>{% endif %}
-                </details>
-                {% endif %}
-              </div>
-            {% endfor %}
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}<p class="muted mb-0">No slots yet. Use the planner above: preview first, then allocate.</p>{% endif %}
-    </section>
+    {% include "studio/_slots.html" %}
   </section>
 
   <!-- schedule -->
@@ -376,12 +310,6 @@
   $("reg-q")?.addEventListener("input", (ev) => {
     const v = ev.target.value.trim().toLowerCase();
     document.querySelectorAll("#reg-table tbody tr").forEach((tr) => { tr.hidden = v && !tr.dataset.q.includes(v); });
-  });
-  // change-slot exception: show the custom time/room fields when "A new time / room…" is chosen
-  document.querySelectorAll("[data-move-target]").forEach((sel) => {
-    const custom = sel.closest("form").querySelector(".move-custom");
-    const sync = () => { custom.hidden = sel.value !== "custom"; };
-    sel.addEventListener("change", sync); sync();
   });
 
   const F = {{ {"reg": stats.registered, "nofood": stats.nofood, "veg": stats.veg, "nonveg": stats.nonveg, "att": stats.attended, "done": e.status == 'completed'}|tojson }};

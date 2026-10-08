@@ -8,6 +8,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 import core
 import documents
 import journey
+import scheduler
 import fest as festlib
 from db import q, ex, scalar, in_clause
 from blueprints.social import hydrate_posts, POST_SELECT, friends_going
@@ -56,9 +57,10 @@ def load_event(eid, allow_draft=False):
     return e
 
 
-def confirm(reg_id, payment_id=None, reviewer=None):
-    """Mark a registration confirmed (and its payment paid). Notifies everyone involved."""
-    reg = q("""SELECT r.*, e.title, e.college_id, e.fee FROM registrations r JOIN events e ON e.id=r.event_id WHERE r.id=?""",
+def confirm(reg_id, payment_id=None, reviewer=None, place=True):
+    """Mark a registration confirmed (and its payment paid). Notifies everyone involved. With place, the new
+    participant also gets their time slot straight away (callers confirming a whole order place once at the end)."""
+    reg = q("""SELECT r.*, e.title, e.college_id, e.fee, e.parent_id FROM registrations r JOIN events e ON e.id=r.event_id WHERE r.id=?""",
             (reg_id,), one=True)
     if not reg:
         return
@@ -69,6 +71,8 @@ def confirm(reg_id, payment_id=None, reviewer=None):
     pts = core.reg_points(q("SELECT * FROM registrations WHERE id=?", (reg_id,), one=True))
     core.notify(reg["user_id"], "event", f"You're in! Your ticket for {reg['title']} is ready. +{pts} points earned.",
                 url_for("events.ticket", code=reg["pass_code"]), reg["college_id"])
+    if place:
+        scheduler.place_new(reg["parent_id"] or reg["event_id"], actor_id=reg["college_id"])
 
 
 def promote_waitlist(event_id):
@@ -83,6 +87,7 @@ def promote_waitlist(event_id):
         ex("UPDATE registrations SET status='confirmed' WHERE id=?", (nxt["id"],))
         core.notify(nxt["user_id"], "event", f"A seat opened up. You're now confirmed for {event['title']}! +{core.POINTS_FREE_REG} points.",
                     url_for("events.ticket", code=nxt["pass_code"]), event["college_id"])
+        scheduler.place_new(event["parent_id"] or event["id"], actor_id=event["college_id"])
     else:
         ex("UPDATE registrations SET status='pending_payment', amount=?, coupon_code=NULL WHERE id=?", (event["fee"], nxt["id"]))
         receipt = core.gen_code("RCPT-", "payments", "receipt_no", 8)
@@ -100,7 +105,8 @@ def cancel_reg(reg, note, actor_id=None):
     regs = [reg] + list(festlib.dependents(reg))
     refunds = 0
     for r in regs:
-        ex("UPDATE registrations SET status='cancelled', slot_start=NULL, slot_end=NULL, slot_venue=NULL WHERE id=?", (r["id"],))
+        ex("""UPDATE registrations SET status='cancelled', slot_id=NULL, slot_start=NULL, slot_end=NULL, slot_venue=NULL,
+              slot_locked=0 WHERE id=?""", (r["id"],))
         pay = q("SELECT * FROM payments WHERE registration_id=? ORDER BY id DESC LIMIT 1", (r["id"],), one=True)
         if pay and pay["status"] == "paid" and pay["amount"] > 0:
             ex("UPDATE payments SET status='refunded', note=? WHERE id=?", (note, pay["id"]))
@@ -245,8 +251,8 @@ def register(eid):
         return redirect(url_for("events.detail", eid=eid) + "#register")
     status = "waitlisted" if join_waitlist else ("confirmed" if price["total"] == 0 else "pending_payment")
     if existing:
-        ex("""UPDATE registrations SET status=?, food_pref=?, team_name=?, amount=?, coupon_code=?, slot_start=NULL,
-              slot_end=NULL, slot_venue=NULL, attended=0, checkin_time=NULL, created_at=datetime('now','localtime') WHERE id=?""",
+        ex("""UPDATE registrations SET status=?, food_pref=?, team_name=?, amount=?, coupon_code=?, slot_id=NULL, slot_start=NULL,
+              slot_end=NULL, slot_venue=NULL, slot_locked=0, attended=0, checkin_time=NULL, created_at=datetime('now','localtime') WHERE id=?""",
            (status, food, team, price["total"], price["code"], existing["id"]))
         reg_id, code = existing["id"], existing["pass_code"]
     else:
@@ -322,8 +328,9 @@ def join(eid):
         ev = it["event"]
         existing = q("SELECT * FROM registrations WHERE event_id=? AND user_id=?", (ev["id"], me["id"]), one=True)
         if existing:
-            ex("""UPDATE registrations SET status=?, food_pref=?, team_name=?, amount=?, coupon_code=NULL, covers=?, slot_start=NULL,
-                  slot_end=NULL, slot_venue=NULL, attended=0, checkin_time=NULL, created_at=datetime('now','localtime') WHERE id=?""",
+            ex("""UPDATE registrations SET status=?, food_pref=?, team_name=?, amount=?, coupon_code=NULL, covers=?, slot_id=NULL,
+                  slot_start=NULL, slot_end=NULL, slot_venue=NULL, slot_locked=0, attended=0, checkin_time=NULL,
+                  created_at=datetime('now','localtime') WHERE id=?""",
                (status, food, it["team"], it["amount"], it["covers"], existing["id"]))
             rid, code = existing["id"], existing["pass_code"]
         else:
@@ -336,9 +343,10 @@ def join(eid):
                  (rid, me["id"], ev["id"], receipt, it["amount"], it["amount"], core.platform_fee(it["amount"]),
                   "free" if total == 0 else "upi", "paid" if total == 0 else "created", None, bundle))
         if status == "confirmed":
-            confirm(rid)
+            confirm(rid, place=False)
         first = first or (receipt, code)
     if status == "confirmed":
+        scheduler.place_new(eid, actor_id=f["college_id"])
         return redirect(url_for("events.success", code=first[1]))
     return redirect(url_for("events.checkout", receipt=first[0]))
 
@@ -526,7 +534,9 @@ def pay_demo(receipt):
     ref = "DEMO" + datetime.now().strftime("%H%M%S%f")[:8]
     for i in items:
         ex("UPDATE payments SET method='demo', utr=? WHERE id=?", (ref, i["id"]))
-        confirm(i["registration_id"], i["id"])
+        confirm(i["registration_id"], i["id"], place=False)
+    for scope in {i["parent_id"] or i["event_id"] for i in items}:
+        scheduler.place_new(scope, actor_id=items[0]["college_id"])
     return redirect(url_for("events.success", code=items[0]["pass_code"]))
 
 
@@ -569,19 +579,28 @@ def tickets():
     me = g.user
     view = request.args.get("view", "list")
     tab = request.args.get("tab", "upcoming")
-    rows = q("""SELECT r.*, e.title, e.category, e.venue, e.start_dt, e.end_dt, e.status event_status, e.banner,
-                       c.name college, c.username college_username, (SELECT f.title FROM events f WHERE f.id=e.parent_id) fest_title,
+    rows = q("""SELECT r.*, e.title, e.category, e.venue, e.start_dt, e.end_dt, e.status event_status, e.banner, e.parent_id,
+                       c.name college, c.username college_username, f.title fest_title, f.start_dt fest_start, f.end_dt fest_end,
+                       f.status fest_status, f.banner fest_banner,
                        (SELECT receipt_no FROM payments p WHERE p.registration_id=r.id ORDER BY p.id DESC LIMIT 1) receipt_no,
-                       (SELECT status FROM payments p WHERE p.registration_id=r.id ORDER BY p.id DESC LIMIT 1) pay_status
+                       (SELECT status FROM payments p WHERE p.registration_id=r.id ORDER BY p.id DESC LIMIT 1) pay_status,
+                       (SELECT 1 FROM event_winners w WHERE w.event_id=r.event_id AND w.user_id=r.user_id) won
                 FROM registrations r JOIN events e ON e.id=r.event_id JOIN users c ON c.id=e.college_id
-                WHERE r.user_id=? AND r.status!='cancelled' ORDER BY e.start_dt""", (me["id"],))
+                LEFT JOIN events f ON f.id=e.parent_id
+                WHERE r.user_id=? AND r.status!='cancelled' AND e.is_removed=0 ORDER BY e.start_dt""", (me["id"],))
     nowi = core.now_iso()
-    groups = {
-        "upcoming": [r for r in rows if r["status"] == "confirmed" and r["end_dt"] >= nowi and r["event_status"] != "completed"],
+
+    def finished(r):
+        end = r["fest_end"] if r["parent_id"] else r["end_dt"]
+        status = r["fest_status"] if r["parent_id"] else r["event_status"]
+        return end < nowi or status == "completed"
+    tabs = {
+        "upcoming": [r for r in rows if r["status"] == "confirmed" and not finished(r)],
         "pending": [r for r in rows if r["status"] in ("pending_payment", "payment_review")],
         "waitlist": [r for r in rows if r["status"] == "waitlisted"],
-        "past": [r for r in rows if r["status"] == "confirmed" and (r["end_dt"] < nowi or r["event_status"] == "completed")],
+        "past": [r for r in rows if r["status"] == "confirmed" and finished(r)],
     }
+    groups = {k: _ticket_cards(v) for k, v in tabs.items()}
     groups["past"].reverse()
     # month calendar
     month = request.args.get("month")
@@ -600,23 +619,69 @@ def tickets():
                            first=first, prev_m=prev_m, next_m=next_m, today=date.today())
 
 
+def _ticket_cards(rows):
+    """My tickets: a fest is one card (one ticket) with its events inside; other events are a card each."""
+    out, fests = [], {}
+    for r in rows:
+        if r["parent_id"]:
+            card = fests.get(r["parent_id"])
+            if not card:
+                card = {"fest": True, "id": r["parent_id"], "title": r["fest_title"], "rows": [], "first": r,
+                        "start_dt": r["fest_start"], "category": "Fest", "status": r["status"], "pay_status": r["pay_status"],
+                        "college": r["college"], "venue": r["venue"]}
+                fests[r["parent_id"]] = card
+                out.append(card)
+            card["rows"].append(r)
+        else:
+            out.append({"fest": False, "rows": [r], "first": r, "title": r["title"], "start_dt": r["start_dt"],
+                        "category": r["category"], "status": r["status"], "pay_status": r["pay_status"],
+                        "college": r["college"], "venue": r["venue"]})
+    for c in out:
+        c["receipts"] = list(dict.fromkeys(x["receipt_no"] for x in c["rows"] if x["receipt_no"] and x["pay_status"] in ("paid", "refunded") and x["amount"]))
+        c["certs"] = [x for x in c["rows"] if x["status"] == "confirmed" and (x["completed_at"] or x["won"])]
+        c["pay_receipt"] = next((x["receipt_no"] for x in c["rows"] if x["status"] == "pending_payment" and x["receipt_no"]), None)
+    return out
+
+
 @bp.route("/ticket/<code>")
 @core.login_required
 def ticket(code):
     reg = _reg(code)
+    scope = journey.scope_id(reg)
+    fest = q("SELECT * FROM events WHERE id=?", (reg["parent_id"],), one=True) if reg["parent_id"] else None
     pay = q("SELECT * FROM payments WHERE registration_id=? ORDER BY id DESC LIMIT 1", (reg["id"],), one=True)
-    news = q("SELECT * FROM announcements WHERE event_id=? ORDER BY created_at DESC LIMIT 3", (reg["event_id"],))
     waitpos = None
     if reg["status"] == "waitlisted":
         waitpos = scalar("SELECT COUNT(*) FROM registrations WHERE event_id=? AND status='waitlisted' AND id<=?",
                          (reg["event_id"], reg["id"]))
     win = q("SELECT * FROM event_winners WHERE event_id=? AND user_id=?", (reg["event_id"], reg["user_id"]), one=True)
-    steps = journey.steps(reg["user_id"], journey.scope_id(reg)) if reg["status"] == "confirmed" else []
-    current = next((s for s in steps if s["state"] == "current"), None)
-    busy = q("""SELECT * FROM busy_times WHERE user_id=? AND (event_id IS NULL OR event_id=?) ORDER BY start_dt""",
-             (reg["user_id"], reg["event_id"]))
-    return render_template("events/ticket.html", reg=reg, pay=pay, news=news, waitpos=waitpos, win=win, steps=steps,
-                           current=current, journey_sig=journey.signature(steps), busy=busy)
+    mine = q("""SELECT r.*, e.title, e.start_dt, e.end_dt, e.venue, e.status event_status, e.category, e.label, e.parent_id,
+                       p.receipt_no, p.status pay_status, p.amount pay_amount, p.note pay_note, p.bundle,
+                       (SELECT 1 FROM event_winners w WHERE w.event_id=r.event_id AND w.user_id=r.user_id) won
+                FROM registrations r JOIN events e ON e.id=r.event_id
+                LEFT JOIN payments p ON p.id=(SELECT MAX(x.id) FROM payments x WHERE x.registration_id=r.id)
+                WHERE r.user_id=? AND (e.id=? OR e.parent_id=?) AND r.status!='cancelled' AND e.is_removed=0
+                ORDER BY e.start_dt, e.position, r.id""", (reg["user_id"], scope, scope))
+    slots = {s["id"]: s for s in q(f"""SELECT * FROM event_slots WHERE id IN
+                                      ({",".join("?" * len(mine)) if mine else "NULL"})""", [m["slot_id"] for m in mine])} if mine else {}
+    events_mine = []
+    for m in mine:
+        sl = slots.get(m["slot_id"])
+        events_mine.append({"r": m, "slot": scheduler.slot_text(sl, venue=m["venue"]) if sl else None})
+    confirmed = any(m["status"] == "confirmed" for m in mine)
+    steps = journey.steps(reg["user_id"], scope) if confirmed else []
+    current = journey.current(steps)
+    ids = [scope] + [m["event_id"] for m in mine]
+    c, a = in_clause(ids)
+    news = q(f"SELECT * FROM announcements WHERE event_id IN {c} ORDER BY created_at DESC LIMIT 4", a)
+    busy = q(f"""SELECT * FROM busy_times WHERE user_id=? AND (event_id IS NULL OR event_id IN {c}) ORDER BY start_dt""",
+             [reg["user_id"]] + a)
+    receipts = list(dict.fromkeys(m["receipt_no"] for m in mine if m["receipt_no"] and m["pay_status"] in ("paid", "refunded") and m["pay_amount"]))
+    pending = [m for m in mine if m["status"] in ("pending_payment", "payment_review", "waitlisted")]
+    return render_template("events/ticket.html", reg=reg, fest=fest, pay=pay, news=news, waitpos=waitpos, win=win,
+                           steps=steps, current=current, journey_sig=journey.signature(steps), busy=busy,
+                           mine=events_mine, receipts=receipts, pending=pending, scope=scope,
+                           ev_finished=(fest["status"] == "completed") if fest else (reg["event_status"] == "completed"))
 
 
 @bp.route("/ticket/<code>/busy", methods=["POST"])
@@ -635,7 +700,7 @@ def busy_add(code):
         flash("You already have 30 busy times. Remove some first.", "error")
     else:
         ex("INSERT INTO busy_times (user_id, event_id, start_dt, end_dt, note) VALUES (?,?,?,?,?)",
-           (g.user["id"], reg["event_id"], core.iso(s), core.iso(e), (request.form.get("note") or "").strip()[:80] or None))
+           (g.user["id"], journey.scope_id(reg), core.iso(s), core.iso(e), (request.form.get("note") or "").strip()[:80] or None))
         flash("Saved. When the organisers plan slots, you won't get one in that time.", "success")
     return redirect(url_for("events.ticket", code=code) + "#busy")
 
@@ -655,7 +720,8 @@ def busy_delete(code, bid):
 def journey_state(code):
     """Polled by the ticket page: when a volunteer scans a step, the page refreshes to show the next QR."""
     reg = _reg(code)
-    steps = journey.steps(reg["user_id"], journey.scope_id(reg)) if reg["status"] == "confirmed" else []
+    scope = journey.scope_id(reg)
+    steps = journey.steps(reg["user_id"], scope)
     return jsonify(sig=journey.signature(steps), status=reg["status"])
 
 

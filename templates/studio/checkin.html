@@ -3,25 +3,47 @@
 {% block title %}{{ title }} · {{ e.title }}{% endblock %}
 {% block assistant %}{% endblock %}
 {% block content %}
+{% set ready = (station != 'EV' or (desk and slot)) and (station != 'FOOD' or meal) %}
 <div class="page wide page-enter" style="--sc: {{ color }}">
   <div class="head-row">
-    <div><span class="station-badge">{{ emoji }} {{ title }}</span><h1>{{ title }} scanner</h1><p>{{ e.title }} · {{ blurb }} This scanner only accepts <b>{{ title|lower }}</b> QR codes.</p></div>
-    <div class="row"><a class="btn ghost" href="{{ url_for('studio.checkin', eid=e.id) }}">{{ icon("scan", "ico sm") }}Other scanners</a>
+    <div><span class="station-badge">{{ emoji }} {{ title }}</span><h1>{{ title }}{% if station == 'EV' and desk %}: {{ desk.title }}{% elif station == 'FOOD' and meal %}: {{ meal.title }}{% endif %}</h1>
+      <p>{{ blurb }} This scanner only accepts <b>{{ "entry" if station == 'IN' else ("event" if station == 'EV' else "meal") }}</b> QR codes.</p></div>
+    <div class="row"><a class="btn ghost" href="{{ url_for('studio.checkin', eid=e.id) }}">{{ icon("scan", "ico sm") }}Other desks</a>
       <a class="btn ghost" href="{{ url_for('studio.event', eid=e.id) }}">Back to event</a></div>
   </div>
 
-  {% if station == 'SLOT' %}
+  {% if station == 'EV' %}
   <div class="card station-card">
-    <div><b>This desk is running</b><small class="muted">Only people booked into this exact time and room are accepted. Anyone else gets "wrong slot".</small></div>
-    {% if sessions %}
-    <select id="session" aria-label="Slot session">
-      <option value="">Choose the slot…</option>
-      {% for sx in sessions %}<option value="{{ sx.key }}" {{ 'selected' if sx.key == session }}>{{ sx.start|dt("%a %d %b") }} · {{ sx.start|time }}–{{ sx.end|time }} · {{ sx.room }}{% if e.kind == 'fest' %} · {{ sx.event }}{% endif %} ({{ sx.in }}/{{ sx.members|length }} in)</option>{% endfor %}
-    </select>
-    {% else %}<p class="muted mb-0">No slots allocated yet. Plan them under the event's <a class="link" href="{{ url_for('studio.event', eid=e.id) }}#slots">Slots</a> tab.</p>{% endif %}
+    <div class="desk-pickers">
+      {% if events|length > 1 or not desk %}
+      <label class="field"><span>Event at this desk</span>
+        <select data-go-param="ev">
+          <option value="">Choose the event…</option>
+          {% for x in events %}<option value="{{ x.id }}" {{ 'selected' if desk and x.id == desk.id }}>{{ x.title }}</option>{% endfor %}
+        </select></label>
+      {% endif %}
+      {% if desk %}
+      <label class="field"><span>Slot this desk is running</span>
+        <select data-go-param="slot" data-keep="ev">
+          {% for s in slots %}<option value="{{ s.id }}" {{ 'selected' if slot and s.id == slot.id }}>{{ slot_name(s) }} · {{ s.start_dt|dt("%a %d %b") }} · {{ s.start_dt|time }}–{{ s.end_dt|time }}{% if s.venue %} · {{ s.venue }}{% endif %}</option>{% endfor %}
+        </select></label>
+      {% endif %}
+    </div>
+    {% if desk and slot %}<p class="small mb-0"><b>Only people allocated to {{ slot_name(slot) }}</b> are accepted here. Anyone else is told which slot is theirs.</p>
+    {% elif desk %}<p class="small mb-0 muted">This event has no slots yet.</p>
+    {% else %}<p class="small mb-0 muted">Pick the event first.</p>{% endif %}
+  </div>
+  {% elif station == 'FOOD' %}
+  <div class="card station-card">
+    {% if meals|length > 1 %}
+    <label class="field"><span>Meal this counter is serving</span>
+      <select data-go-param="meal">{% for m in meals %}<option value="{{ m.key }}" {{ 'selected' if meal and m.key == meal.key }}>{{ m.title }}{% if m.start %} · {{ m.start|time }}{% if m.end %}–{{ m.end|time }}{% endif %}{% endif %}</option>{% endfor %}</select></label>
+    {% elif meal %}<p class="mb-0"><b>Serving: {{ meal.title }}</b>{% if meal.start %} · {{ meal.start|time }}{% if meal.end %}–{{ meal.end|time }}{% endif %}{% endif %}</p>
+    {% else %}<p class="muted mb-0">No meal is planned for this event. Add one in the event-day order (Slots &amp; flow).</p>{% endif %}
   </div>
   {% endif %}
 
+  {% if ready %}
   <div class="scan-grid">
     <div class="stack">
       <div class="scanner">
@@ -30,81 +52,82 @@
       </div>
       <form class="card" id="manual" autocomplete="off">
         <label for="code">No camera? Type the ticket code</label>
-        <div class="row nw"><input id="code" placeholder="EVF-XXXXXX" style="text-transform:uppercase"><button class="btn" data-noload>Mark {{ title|lower }}</button></div>
+        <div class="row nw"><input id="code" placeholder="EVF-XXXXXX" style="text-transform:uppercase"><button class="btn" data-noload>Check in</button></div>
       </form>
     </div>
     <div class="stack">
-      <div class="scan-result" id="result" aria-live="assertive"><h3>Ready to scan</h3><p class="muted mb-0">Name, slot, team, food choice and their progress appear here after each scan.</p></div>
+      <div class="scan-result" id="result" aria-live="assertive"><h3>Ready to scan</h3><p class="muted mb-0">Name, team, slot, food choice and their task list appear here after each scan.</p></div>
       <div class="card">
-        <div class="step-counts four">
-          <div class="{{ 'on' if station == 'IN' }}"><span>🚪</span><b id="n-in">{{ stats.attended }}</b><small>entered</small></div>
-          <div class="{{ 'on' if station == 'SLOT' }}"><span>⏱️</span><b id="n-slot">{{ stats.slot_in }}</b><small>in their slot</small></div>
-          <div class="{{ 'on' if station == 'DONE' }}"><span>🎯</span><b id="n-done">{{ stats.completed }}</b><small>completed</small></div>
-          <div class="{{ 'on' if station == 'FOOD' }}"><span>🍽️</span><b id="n-food">{{ stats.fed }}</b><small>meals</small></div>
+        <div class="step-counts">
+          <div class="{{ 'on' if station == 'IN' }}"><span>🚪</span><b id="n-in">{{ n.entered }}</b><small>entered</small></div>
+          <div class="{{ 'on' if station == 'EV' }}"><span>🎯</span><b id="n-ev">{{ n.events_done }}</b><small>event check-ins</small></div>
+          <div class="{{ 'on' if station == 'FOOD' }}"><span>🍽️</span><b id="n-food">{{ n.fed }}</b><small>fed</small></div>
         </div>
-        <p class="small muted mb-0" style="margin-top:10px"><span id="reg">{{ stats.registered }}</span> confirmed participants</p>
+        <p class="small muted mb-0" style="margin-top:10px">{{ n.people }} confirmed participant{{ 's' if n.people != 1 }}{% if n.tickets != n.people %} · {{ n.tickets }} event tickets{% endif %}</p>
       </div>
-      {% if station == 'SLOT' and sessions %}
-      <div class="card" id="expected-card" hidden>
-        <h3>Expected in this slot</h3>
-        {% for sx in sessions %}<div class="expected" data-session="{{ sx.key }}" hidden>
-          {% for m in sx.members %}<div class="suggest" data-code="{{ m.pass_code }}">{{ avatar(m.name, m.avatar, "sm") }}<span class="grow"><b>{{ m.name }}</b><small>{% if m.team_name %}Team {{ m.team_name }}{% endif %}</small></span>
-            <span class="pill {{ 'green' if m.slot_in_at else '' }}" data-state>{{ "In ✓" if m.slot_in_at else "Waiting" }}</span></div>{% endfor %}
-        </div>{% endfor %}
+      {% if station == 'EV' and slot %}
+      <div class="card">
+        <div class="card-head"><h3>In {{ slot_name(slot) }}</h3><span class="pill"><b id="slot-done">{{ expected|selectattr('completed_at')|list|length }}</b>/{{ expected|length }} in</span></div>
+        {% for m in expected %}<div class="suggest" data-code="{{ m.pass_code }}">{{ avatar(m.name, m.avatar, "sm") }}<span class="grow"><b>{{ m.name }}</b><small>{% if m.team_name %}Team {{ m.team_name }}{% else %}Solo{% endif %}</small></span>
+          <span class="pill {{ 'green' if m.completed_at else '' }}" data-state>{{ "In ✓" if m.completed_at else "Waiting" }}</span></div>
+        {% else %}<p class="muted mb-0">Nobody is allocated to this slot yet.</p>{% endfor %}
       </div>
       {% endif %}
       <div class="card">
         <h3>Recent</h3>
         <div id="recent">
-          {% for r in recent %}<div class="suggest">{{ avatar(r.name, r.avatar, "sm") }}<span class="grow"><b>{{ r.name }}</b><small>{{ r.ev_title if e.kind == 'fest' else (r.department or '') }}</small></span><small class="muted">{{ r.at|time }}</small></div>
+          {% for r in recent %}<div class="suggest">{{ avatar(r.name, r.avatar, "sm") }}<span class="grow"><b>{{ r.name }}</b><small>{{ r.department or '' }}</small></span><small class="muted">{{ r.at|time }}</small></div>
           {% else %}<p class="muted mb-0" id="recent-empty">Nobody yet.</p>{% endfor %}
         </div>
       </div>
     </div>
   </div>
+  {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='vendor/html5-qrcode.min.js') }}"></script>
 <script>
 (() => {
-  const EID = {{ e.id }}, STATION = "{{ station }}", result = document.getElementById("result"), recent = document.getElementById("recent");
-  const sessionSel = document.getElementById("session");
+  // desk pickers: changing the event / slot / meal reloads this desk with it
+  document.querySelectorAll("[data-go-param]").forEach((sel) => sel.addEventListener("change", () => {
+    const u = new URL(location.href);
+    u.searchParams.set(sel.dataset.goParam, sel.value);
+    if (sel.dataset.goParam === "ev") u.searchParams.delete("slot");
+    location.href = u.toString();
+  }));
+  const result = document.getElementById("result");
+  if (!result) return;
+  const DESK = {{ (desk.id if desk else e.id) }}, STATION = "{{ station }}", SLOT = "{{ slot.id if slot else '' }}", MEAL = "{{ meal.key if meal else '' }}";
+  const recent = document.getElementById("recent");
   let last = { c: "", t: 0 }, scanner = null, on = false;
-  const showExpected = () => {
-    const card = document.getElementById("expected-card");
-    if (!card || !sessionSel) return;
-    card.hidden = !sessionSel.value;
-    document.querySelectorAll(".expected").forEach((x) => { x.hidden = x.dataset.session !== sessionSel.value; });
-    const u = new URL(location.href); u.searchParams.set("session", sessionSel.value); history.replaceState(null, "", u);
-  };
-  sessionSel?.addEventListener("change", showExpected); showExpected();
   const beep = (ok) => { try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain();
     o.frequency.value = ok ? 880 : 220; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(.15, a.currentTime); o.start(); o.stop(a.currentTime + (ok ? .12 : .3)); } catch (e) {} };
-  async function check(code) {
+  async function check(code, skip = false) {
     code = (code || "").trim().toUpperCase();
-    if (!code || (code === last.c && Date.now() - last.t < 3000)) return;
+    if (!code || (!skip && code === last.c && Date.now() - last.t < 3000)) return;
     last = { c: code, t: Date.now() };
     let d;
-    try { d = await EF.api("{{ url_for('studio.api_checkin') }}", { code, event_id: EID, station: STATION, session: sessionSel ? sessionSel.value : "" }); }
+    try { d = await EF.api("{{ url_for('studio.api_checkin') }}", { code, event_id: DESK, station: STATION, slot: SLOT, meal: MEAL, skip }); }
     catch (e) { d = { level: "error", message: e.message }; }
     result.className = "scan-result " + (d.level || "error");
     const p = d.person, food = p ? { veg: "Veg", nonveg: "Non-veg", none: "No meal" }[p.food] : "";
     result.innerHTML = `<h3>${EF.esc(d.message)}</h3>` + (p ? `<p class="mb-0">${EF.esc(p.college || "")}${p.department ? " · " + EF.esc(p.department) : ""}${p.team ? " · Team " + EF.esc(p.team) : ""}</p>
       <p class="mb-0">${p.slot ? "Slot <b>" + EF.esc(p.slot) + "</b> · " : ""}Food <b>${EF.esc(food)}</b></p>` : "")
-      + (d.steps ? `<div class="scan-steps">${d.steps.map((s) => `<span class="${s.state}">${s.state === "done" ? "✓" : s.icon} ${EF.esc(s.title)}</span>`).join("")}</div>` : "")
-      + (d.next ? `<p class="small mb-0" style="margin-top:8px">Next for them: <b>${EF.esc(d.next)}</b></p>` : "");
+      + (d.steps ? `<div class="scan-steps">${d.steps.map((s) => `<span class="${s.state}">${s.state === "done" ? "✓" : (s.state === "skipped" ? "↷" : s.icon)} ${EF.esc(s.title)}</span>`).join("")}</div>` : "")
+      + (d.next ? `<p class="small mb-0" style="margin-top:8px">Next for them: <b>${EF.esc(d.next)}</b></p>` : "")
+      + (d.can_skip ? `<button class="btn ghost sm" type="button" data-skip style="margin-top:10px">Mark the earlier tasks as missed and check in</button>` : "");
+    result.querySelector("[data-skip]")?.addEventListener("click", () => { if (confirm("Mark their earlier tasks as missed and check them in here?")) check(code, true); });
     beep(d.ok);
     if (navigator.vibrate) navigator.vibrate(d.ok ? 60 : [80, 60, 80]);
-    if (d.registered !== undefined) {
-      [["n-in", d.attended], ["n-slot", d.slot_in], ["n-done", d.completed], ["n-food", d.fed]].forEach(([id, v]) => { const el = document.getElementById(id); if (el && v !== undefined) el.textContent = v; });
-    }
+    if (d.n) { const set = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined) el.textContent = v; };
+      set("n-in", d.n.entered); set("n-ev", d.n.events_done); set("n-food", d.n.fed); set("slot-done", d.slot_done); }
     if (d.ok && p) {
       document.getElementById("recent-empty")?.remove();
       const row = document.createElement("div"); row.className = "suggest"; row.style.animation = "bubble-in .4s var(--spring)";
       row.innerHTML = `<span class="av av-sm" style="--h:${(p.name.length * 47) % 360}">${EF.esc(p.name.split(" ").map((x) => x[0]).slice(0, 2).join(""))}</span><span class="grow"><b>${EF.esc(p.name)}</b><small>${EF.esc(p.department || "")}</small></span><small class="muted">now</small>`;
       recent.prepend(row);
-      const exp = [...document.querySelectorAll(".expected:not([hidden]) .suggest")].find((x) => code.includes(x.dataset.code));
+      const exp = [...document.querySelectorAll(".suggest[data-code]")].find((x) => x.dataset.code === d.reg);
       if (exp) { const st = exp.querySelector("[data-state]"); st.textContent = "In ✓"; st.classList.add("green"); }
     }
   }

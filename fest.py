@@ -15,26 +15,6 @@ import core
 
 HELD = ("confirmed", "payment_review", "pending_payment")   # statuses that keep a pass / team alive
 
-TEMPLATE = [
-    # (track, emoji, blurb, pricing, pass_fee, [(title, category, fee, fee_type, team_size, label)])
-    ("Technical events", "💻", "Challenge your skills. Build. Solve. Compete.", "pass", 75, [
-        ("Hackathon", "Technical", 0, "person", 4, None), ("Tech Maze", "Technical", 0, "person", 1, None),
-        ("Debugging", "Technical", 0, "person", 1, None), ("Logo Designing", "Technical", 0, "person", 1, None),
-        ("Tech Quiz", "Technical", 0, "person", 2, None), ("Paper Presentation", "Technical", 0, "person", 2, None)]),
-    ("Non-technical events", "🎭", "Show your talent, creativity, confidence and teamwork.", "event", 0, [
-        ("Ramp Walk", "Cultural", 75, "person", 1, None), ("Solo / Group Dance", "Cultural", 75, "person", 6, None),
-        ("TuneTopia", "Cultural", 75, "person", 1, None), ("Treasure Hunt", "Cultural", 75, "person", 4, None),
-        ("Mobile Gaming", "Gaming", 75, "person", 4, "BGMI · Free Fire"), ("AdapTune", "Cultural", 75, "person", 1, None),
-        ("Singing (Solo)", "Cultural", 75, "person", 1, None), ("Connexion", "Cultural", 75, "person", 2, None),
-        ("Squid Game", "Cultural", 75, "person", 1, None), ("Pass the Ball", "Cultural", 75, "person", 1, None)]),
-    ("Sports", "🏆", "Team fee. Valid college ID needed. Played on both fest days.", "event", 0, [
-        ("Cricket (Tennis Ball)", "Sports", 600, "team", 11, "Boys only"), ("Football (7s)", "Sports", 600, "team", 7, "Boys only"),
-        ("Volleyball", "Sports", 600, "team", 6, "Boys only"), ("Kabaddi", "Sports", 600, "team", 7, "Boys only"),
-        ("Kho-Kho", "Sports", 600, "team", 9, "Boys & Girls"), ("Throwball", "Sports", 600, "team", 7, "Boys & Girls"),
-        ("Chess", "Sports", 150, "team", 2, "Boys & Girls"), ("Carrom", "Sports", 150, "team", 2, "Boys & Girls")]),
-]
-
-
 # ------------------------------------------------------------------ reading
 def get_fest(event):
     """The parent fest of a sub-event (or the event itself if it is a fest), else None."""
@@ -197,17 +177,6 @@ def sync(fest_id):
     prices += [t["pass_fee"] for t in tracks(fest_id) if t["pricing"] == "pass" and t["pass_fee"]]
     cap = sum(s["capacity"] for s in subs) or 100
     ex("UPDATE events SET fee=?, capacity=? WHERE id=?", (min(prices) if prices else 0, cap, fest_id))
-
-
-def apply_template(fest):
-    """Create the poster-style structure: Technical (one pass), Non-technical (per event), Sports (per team)."""
-    for pos, (name, emoji, blurb, pricing, pass_fee, events) in enumerate(TEMPLATE):
-        tid = ex("INSERT INTO fest_tracks (fest_id, name, emoji, blurb, pricing, pass_fee, position) VALUES (?,?,?,?,?,?,?)",
-                 (fest["id"], name, emoji, blurb, pricing, pass_fee, pos))
-        for i, (title, cat, fee, fee_type, team, label) in enumerate(events):
-            add_sub(fest, tid, title=title, category=cat, fee=fee, fee_type=fee_type, team_size=team, label=label, position=i,
-                    capacity=40 if cat == "Sports" else 100)
-    sync(fest["id"])
 
 
 def add_sub(fest, track_id, title, category="Technical", fee=0, fee_type="person", team_size=1, label=None, position=None,

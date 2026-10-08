@@ -6,7 +6,7 @@ import os
 import re
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import wraps
 
 import qrcode
@@ -451,19 +451,6 @@ def food_estimate(event, stats):
             "nonveg": diners - round(diners * vs), "meals": meals, "cost": cost, "plates": plates, "base": base,
             "buffer": base * buf / 100, "buffer_pct": buf, "total": base * (1 + buf / 100),
             "worst": reg * eat * meals * cost * (1 + buf / 100)}
-
-
-def assign_slots(event_id, start, duration, gap, rooms):
-    rooms = [r.strip() for r in rooms if r.strip()] or ["Main Hall"]
-    regs = q("""SELECT id FROM registrations WHERE event_id=? AND status='confirmed'
-                ORDER BY COALESCE(team_name,'~'), id""", (event_id,))
-    for i, r in enumerate(regs):
-        s = start + timedelta(minutes=(i // len(rooms)) * (duration + gap))
-        ex("UPDATE registrations SET slot_start=?, slot_end=?, slot_venue=? WHERE id=?",
-           (iso(s), iso(s + timedelta(minutes=duration)), rooms[i % len(rooms)], r["id"]))
-    rounds = math.ceil(len(regs) / len(rooms)) if regs else 0
-    last_end = start + timedelta(minutes=max(0, rounds - 1) * (duration + gap) + duration)
-    return len(regs), rooms, last_end
 
 
 def user_badges(user_id):

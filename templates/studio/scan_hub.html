@@ -4,21 +4,22 @@
 {% block assistant %}{% endblock %}
 {% block content %}
 <div class="page wide page-enter">
-  <div class="head-row"><div><h1>Scan QR</h1><p>{{ e.title }} · pick the task this phone is doing. Each task has its own scanner and only accepts its own QR, so nothing gets marked at the wrong desk.</p></div>
+  <div class="head-row"><div><h1>Scan QR</h1><p>{{ e.title }} · pick what this phone is scanning for. Each desk has its own scanner and only accepts its own QR, so nothing is ever marked at the wrong desk.</p></div>
     <a class="btn ghost" href="{{ url_for('studio.event', eid=e.id) }}">Back to event</a></div>
-  {% set counts = {"entry": stats.attended, "slot": stats.slot_in, "completion": stats.completed, "food": stats.fed} %}
-  <div class="scan-hub">
+  {% set counts = {"entry": n.entered, "event": n.events_done, "food": n.fed} %}
+  {% set totals = {"entry": n.people, "event": n.tickets, "food": n.people} %}
+  <div class="scan-hub three">
     {% for slug, (kind, title, emoji, blurb, color) in info.items() %}
     <a class="scan-card reveal lift" href="{{ url_for('studio.scan_station', eid=e.id, station=slug) }}" style="--sc: {{ color }}">
       <span class="sc-n">{{ loop.index }}</span>
       <span class="sc-emoji">{{ emoji }}</span>
       <b>{{ title }}</b>
       <small>{{ blurb }}</small>
-      <span class="sc-count"><b>{{ counts[slug] }}</b> / {{ stats.registered }} done</span>
+      <span class="sc-count"><b>{{ counts[slug] }}</b> / {{ totals[slug] }} {{ "event check-ins" if slug == 'event' else ("people" if slug == 'entry' else "fed") }}</span>
       <span class="sc-go">Open scanner {{ icon("right", "ico sm") }}</span>
     </a>
     {% endfor %}
   </div>
-  <p class="small muted center" style="margin-top:18px">Order for every participant: Entry → Slot (if they have one) → Completion → Food → their next event. A step is only accepted once the one before it is done.</p>
+  <p class="small muted center" style="margin-top:18px">Each participant's order: Entry → their events, each in the time slot allocated to them{% if meals %} → meals where they fall{% endif %}. A task is only accepted once the one before it is done. An event QR only works at that event's desk while it runs the participant's own slot.</p>
 </div>
 {% endblock %}

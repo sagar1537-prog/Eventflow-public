@@ -195,7 +195,12 @@ def counts():
     if not g.user:
         return jsonify(notifications=0, messages=0, requests=0)
     uid = g.user["id"]
+    extra = {}
+    if g.user["role"] == "student":               # keep the live event-day notice current while the app is open
+        import live
+        extra["live"] = live.refresh_user(uid)
     return jsonify(
+        **extra,
         notifications=scalar("SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0", (uid,)),
         messages=scalar("SELECT COUNT(*) FROM messages WHERE recipient_id=? AND read_at IS NULL", (uid,)),
         requests=scalar("SELECT COUNT(*) FROM friendships WHERE addressee_id=? AND status='pending'", (uid,)),

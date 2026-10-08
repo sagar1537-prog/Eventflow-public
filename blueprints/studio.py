@@ -1,6 +1,7 @@
 """College studio: the admin dashboard for a college's events (and for event leads it has invited)."""
 import csv
 import io
+import json
 from datetime import datetime, timedelta
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, g, abort, jsonify, Response
@@ -8,6 +9,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 import ai_agent
 import core
 import journey
+import live
 import scheduler
 import fest as festlib
 from db import q, ex, scalar, in_clause
@@ -137,9 +139,24 @@ def overview():
               "events": [e["title"] for e in events if e["status"] != "draft" and e["kind"] != "fest"][:8],
               "ev_reg": [e["reg_count"] for e in events if e["status"] != "draft" and e["kind"] != "fest"][:8],
               "ev_att": [e["att_count"] for e in events if e["status"] != "draft" and e["kind"] != "fest"][:8]}
-    recent = q(f"""SELECT p.*, u.name, u.username, e.title FROM payments p JOIN users u ON u.id=p.user_id JOIN events e ON e.id=p.event_id
-                   WHERE p.event_id IN {c} AND p.status IN ('paid','submitted') ORDER BY p.created_at DESC LIMIT 8""", a)
+    rows = q(f"""SELECT p.*, u.name, u.username, u.avatar, e.title FROM payments p JOIN users u ON u.id=p.user_id
+                 JOIN events e ON e.id=p.event_id
+                 WHERE p.event_id IN {c} AND p.status IN ('paid','submitted') AND p.method!='free'
+                 ORDER BY p.created_at DESC, p.id DESC LIMIT 120""", a)
+    recent = _orders(rows)[:8]
     return render_template("studio/overview.html", events=listed, kpis=kpis, charts=charts, recent=recent, active="overview")
+
+
+def _orders(rows):
+    """Payments grouped into orders: a fest order (several events paid together) is one line, not one per event."""
+    orders = {}
+    for p in rows:
+        key = (p["bundle"] or p["receipt_no"], p["status"])
+        o = orders.setdefault(key, {"head": p, "events": [], "total": 0, "status": p["status"]})
+        if p["title"] not in o["events"]:
+            o["events"].insert(0, p["title"])         # rows come newest first; list the order's events in order
+        o["total"] += p["amount"]
+    return list(orders.values())
 
 
 # ================================================================== events CRUD
@@ -218,49 +235,196 @@ def _banner(data, old=None):
         data["banner"] = None
 
 
+# ---------------------------------------------------------------- the create / edit wizard
+def _json_field(name, default):
+    raw = request.form.get(name) or ""
+    try:
+        val = json.loads(raw) if raw.strip() else default
+    except ValueError:
+        return default
+    return val if isinstance(val, type(default)) else default
+
+
+def _int(v, lo, hi, default):
+    try:
+        return min(hi, max(lo, int(float(v))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _fest_plan(errors):
+    """The events inside a new fest, from the wizard: [{name, emoji, pricing, pass_fee, events: [...]}]."""
+    data = _json_field("fest_json", {})
+    tracks, keys, titles = [], set(), set()
+    for t in (data.get("tracks") or [])[:12]:
+        if not isinstance(t, dict):
+            continue
+        evs = []
+        for ev in (t.get("events") or [])[:100]:
+            if not isinstance(ev, dict):
+                continue
+            title = str(ev.get("title") or "").strip()[:120]
+            if not title:
+                continue                                    # empty rows are simply ignored
+            if title.lower() in titles:
+                errors.append(f"Two events are called “{title}”. Give each event its own name.")
+                continue
+            titles.add(title.lower())
+            key = str(ev.get("key") or "")[:24]
+            if not key or key in keys or key == "self":
+                key = f"k{len(keys) + 1}"
+            keys.add(key)
+            team = _int(ev.get("team_size"), 1, 15, 1)
+            evs.append({"key": key, "title": title,
+                        "category": ev.get("category") if ev.get("category") in core.CATEGORIES else "Other",
+                        "fee": _int(ev.get("fee"), 0, 10 ** 6, 0),
+                        "fee_type": "team" if ev.get("fee_type") == "team" and team > 1 else "person",
+                        "team_size": team, "capacity": _int(ev.get("capacity"), 1, 100000, 100),
+                        "label": str(ev.get("label") or "").strip()[:40] or None,
+                        "venue": str(ev.get("venue") or "").strip()[:120] or None})
+        name = str(t.get("name") or "").strip()[:60]
+        if not evs and not name:
+            continue
+        tracks.append({"name": name or "Events", "emoji": str(t.get("emoji") or "").strip()[:4] or "✨",
+                       "blurb": str(t.get("blurb") or "").strip()[:200],
+                       "pricing": "pass" if t.get("pricing") == "pass" else "event",
+                       "pass_fee": _int(t.get("pass_fee"), 0, 10 ** 6, 0), "events": evs})
+    if not any(t["events"] for t in tracks):
+        errors.append("Add at least one event inside the fest.")
+    return [t for t in tracks if t["events"] or t["name"]]
+
+
+def _slot_plan(errors, event_keys):
+    """Time slots from the wizard: rounds (shared times) and which events run in which, with members per slot."""
+    data = _json_field("slots_json", {})
+    rounds, seen = [], set()
+    for i, r in enumerate((data.get("rounds") or [])[:80]):
+        if not isinstance(r, dict):
+            continue
+        s, e = core.parse_dt(r.get("start")), core.parse_dt(r.get("end"))
+        name = str(r.get("label") or "").strip()[:40] or f"Slot {i + 1}"
+        if not s or not e:
+            errors.append(f"{name} needs a start and an end time.")
+            continue
+        if e <= s:
+            errors.append(f"{name} must end after it starts.")
+            continue
+        key = str(r.get("key") or "")[:24] or f"r{i}"
+        if key in seen:
+            key = f"r{i}"
+        seen.add(key)
+        rounds.append({"key": key, "label": str(r.get("label") or "").strip()[:40] or None, "start": s, "end": e,
+                       "venue": str(r.get("venue") or "").strip()[:80] or None})
+    raw = data.get("use") if isinstance(data.get("use"), dict) else {}
+    use = {}
+    for k in event_keys:
+        u = raw.get(k) if isinstance(raw.get(k), dict) else {}
+        picked = set(map(str, u.get("rounds") or []))
+        use[k] = {"rounds": [r for r in rounds if r["key"] in picked], "capacity": _int(u.get("capacity"), 1, 100000, 20)}
+    return rounds, use
+
+
+def _flow_plan(errors):
+    out = []
+    for it in _json_field("flow_json", [])[:150]:
+        if not isinstance(it, dict):
+            continue
+        if it.get("type") == "event":
+            out.append({"type": "event", "ref": str(it.get("ref") or "")})
+        elif it.get("type") == "food":
+            title = str(it.get("title") or "").strip()[:60] or "Meal"
+            s, e = core.parse_dt(it.get("start")), core.parse_dt(it.get("end"))
+            if s and e and e <= s:
+                errors.append(f"{title} must end after it starts.")
+            out.append({"type": "food", "title": title, "start": core.iso(s), "end": core.iso(e),
+                        "venue": str(it.get("venue") or "").strip()[:80] or None})
+    return out
+
+
+def _wizard(e, mode, **ctx):
+    wiz = {"kind": request.form.get("kind") or ("fest" if e.get("kind") == "fest" else "event"),
+           "fest_json": request.form.get("fest_json") or "", "slots_json": request.form.get("slots_json") or "",
+           "flow_json": request.form.get("flow_json") or ""}
+    return render_template("studio/event_form.html", e=e, mode=mode, wiz=wiz, active="new" if mode == "create" else ctx.pop("active", "new"),
+                           **ctx)
+
+
 @bp.route("/events/new", methods=["GET", "POST"])
 def event_new():
     if g.user["role"] != "college":
         abort(403)
-    if request.method == "POST":
-        data, errors = _form()
-        try:
-            if not errors:
-                _banner(data)
-        except ValueError as err:
-            errors.append(str(err))
-        if errors:
-            for e in errors:
-                flash(e, "error")
-            return render_template("studio/event_form.html", e=data, active="new")
-        data["college_id"] = g.user["id"]
-        is_fest = request.form.get("kind") == "fest"
-        if is_fest:
-            data["kind"] = "fest"
-        cols = ",".join(data)
-        eid = ex(f"INSERT INTO events ({cols}) VALUES ({','.join('?' * len(data))})", tuple(data.values()))
-        if is_fest:
-            if request.form.get("template"):
-                festlib.apply_template(q("SELECT * FROM events WHERE id=?", (eid,), one=True))
-                if not g.user["upi_id"]:
-                    flash("Add your UPI ID in Settings → Payments so students can pay for the paid events.", "info")
-            core.audit("fest.create", f"{data['title']} (#{eid})")
-            flash("Fest created. Check the tracks and prices, then share a post about it.", "success")
-            if data["status"] == "open":
-                fol = [r[0] for r in q("SELECT follower_id FROM follows WHERE college_id=?", (g.user["id"],))]
-                core.notify_many(fol, "event", f"{g.user['name']} opened registrations for {data['title']}.",
-                                 url_for("events.detail", eid=eid), g.user["id"])
-            return redirect(url_for("studio.event", eid=eid))
-        if data["status"] == "open":
-            fol = [r[0] for r in q("SELECT follower_id FROM follows WHERE college_id=?", (g.user["id"],))]
-            core.notify_many(fol, "event", f"{g.user['name']} opened registrations for {data['title']}.",
-                             url_for("events.detail", eid=eid), g.user["id"])
-        core.audit("event.create", f"{data['title']} (#{eid})")
-        flash("Event created. Add a schedule, then share a post about it.", "success")
-        return redirect(url_for("studio.event", eid=eid))
-    blank = {"category": "Technical", "status": "open", "capacity": 100, "fee": 0, "team_size": 1, "food_buffer_pct": 10,
-             "meals_count": 1, "food_cost_per_head": 100, "city": g.user["city"]}
-    return render_template("studio/event_form.html", e=blank, active="new")
+    if request.method == "GET":
+        blank = {"category": "Technical", "status": "open", "capacity": 100, "fee": 0, "team_size": 1, "food_buffer_pct": 10,
+                 "meals_count": 0, "food_cost_per_head": 100, "city": g.user["city"],
+                 "kind": "fest" if request.args.get("kind") == "fest" else "event"}
+        return _wizard(blank, "create")
+    data, errors = _form()
+    is_fest = request.form.get("kind") == "fest"
+    tracks = _fest_plan(errors) if is_fest else []
+    keys = [ev["key"] for t in tracks for ev in t["events"]] if is_fest else ["self"]
+    _rounds, use = _slot_plan(errors, keys)
+    flow_items = _flow_plan(errors)
+    paid = any((t["pricing"] == "pass" and t["pass_fee"]) or (t["pricing"] == "event" and any(ev["fee"] for ev in t["events"]))
+               for t in tracks)
+    if is_fest and paid and not g.user["upi_id"]:
+        errors.append("Add your UPI ID in Settings → Payments before adding paid events.")
+    try:
+        if not errors:
+            _banner(data)
+    except ValueError as err:
+        errors.append(str(err))
+    if errors:
+        for msg in dict.fromkeys(errors):
+            flash(msg, "error")
+        data["kind"] = "fest" if is_fest else "event"
+        return _wizard(data, "create")
+    data["college_id"] = g.user["id"]
+    if is_fest:
+        data["kind"] = "fest"
+    cols = ",".join(data)
+    eid = ex(f"INSERT INTO events ({cols}) VALUES ({','.join('?' * len(data))})", tuple(data.values()))
+    ids = {}
+    if is_fest:
+        fest_row = q("SELECT * FROM events WHERE id=?", (eid,), one=True)
+        for pos, t in enumerate(tracks):
+            tid = ex("INSERT INTO fest_tracks (fest_id, name, emoji, blurb, pricing, pass_fee, position) VALUES (?,?,?,?,?,?,?)",
+                     (eid, t["name"], t["emoji"], t["blurb"], t["pricing"], t["pass_fee"], pos))
+            for i, ev in enumerate(t["events"]):
+                rs = use[ev["key"]]["rounds"]
+                start = min(r["start"] for r in rs) if rs else core.parse_dt(data["start_dt"])
+                end = max(r["end"] for r in rs) if rs else core.parse_dt(data["end_dt"])
+                sid = festlib.add_sub(fest_row, tid, ev["title"], category=ev["category"],
+                                      fee=ev["fee"] if t["pricing"] == "event" else 0, fee_type=ev["fee_type"],
+                                      team_size=ev["team_size"], label=ev["label"], position=pos * 1000 + i,
+                                      capacity=ev["capacity"], venue=ev["venue"], start_dt=core.iso(start), end_dt=core.iso(end))
+                ids[ev["key"]] = sid
+                for r in rs:
+                    scheduler.add_slot(sid, r["start"], r["end"], r["venue"], use[ev["key"]]["capacity"], r["label"])
+                scheduler.ensure_default_slot(q("SELECT * FROM events WHERE id=?", (sid,), one=True))
+        festlib.sync(eid)
+    else:
+        ids["self"] = eid
+        for r in use["self"]["rounds"]:
+            scheduler.add_slot(eid, r["start"], r["end"], r["venue"], use["self"]["capacity"], r["label"])
+        scheduler.ensure_default_slot(q("SELECT * FROM events WHERE id=?", (eid,), one=True))
+    if flow_items:
+        items = []
+        for it in flow_items:
+            if it["type"] == "event" and it["ref"] in ids:
+                items.append({"key": f"ev-{ids[it['ref']]}"})
+            elif it["type"] == "food":
+                items.append(dict(it, key="new"))
+        scheduler.save_flow(eid, items)
+    if data["status"] == "open":
+        fol = [r[0] for r in q("SELECT follower_id FROM follows WHERE college_id=?", (g.user["id"],))]
+        core.notify_many(fol, "event", f"{g.user['name']} opened registrations for {data['title']}.",
+                         url_for("events.detail", eid=eid), g.user["id"])
+    core.audit("fest.create" if is_fest else "event.create", f"{data['title']} (#{eid})")
+    if is_fest and not g.user["upi_id"]:
+        flash("Add your UPI ID in Settings → Payments if you later add paid events.", "info")
+    flash(f"{'Fest' if is_fest else 'Event'} created with {len(ids) if is_fest else 1} event{'s' if is_fest and len(ids) != 1 else ''}. "
+          "Everything can be changed from here.", "success")
+    return redirect(url_for("studio.event", eid=eid))
 
 
 @bp.route("/events/<int:eid>/edit", methods=["GET", "POST"])
@@ -280,21 +444,34 @@ def event_edit(eid):
             data.update(id=eid, banner=event["banner"], kind=event["kind"], parent_id=event["parent_id"],
                         track_id=data.get("track_id", event["track_id"]), fee_type=data.get("fee_type", event["fee_type"]),
                         label=data.get("label", event["label"]))
-            return render_template("studio/event_form.html", e=data, active=f"ev{eid}", **_sub_ctx(event))
+            return _wizard(data, "edit", active=f"ev{eid}", **_sub_ctx(event))
         ex(f"UPDATE events SET {', '.join(k + '=?' for k in data)} WHERE id=?", tuple(data.values()) + (eid,))
+        if event["kind"] != "fest":
+            # the default slot (the whole event) follows the event's new times
+            slots = scheduler.slots_of(eid)
+            if len(slots) == 1 and slots[0]["start_dt"][:16] == (event["start_dt"] or "")[:16] \
+                    and slots[0]["end_dt"][:16] == (event["end_dt"] or "")[:16] \
+                    and (data["start_dt"][:16], data["end_dt"][:16]) != (event["start_dt"][:16], event["end_dt"][:16]):
+                s = slots[0]
+                moved = scheduler.save_slot(s, core.parse_dt(data["start_dt"]), core.parse_dt(data["end_dt"]), s["venue"],
+                                            max(s["capacity"], data["capacity"]), s["label"])
+                fresh = q("SELECT * FROM event_slots WHERE id=?", (s["id"],), one=True)
+                scheduler.tell([(r, fresh) for r in moved], g.user["id"], why="The time changed.")
         if event["kind"] == "fest":
             if data["status"] != event["status"]:  # sub-events that followed the fest follow it again
                 ex("UPDATE events SET status=? WHERE parent_id=? AND status=?", (data["status"], eid, event["status"]))
             festlib.sync(eid)
         if event["parent_id"]:
             festlib.sync(event["parent_id"])
+        if data["status"] == "completed" and event["status"] != "completed" and not event["parent_id"]:
+            live.clear_scope(eid)
         if event["status"] != "open" and data["status"] == "open":
             fol = [r[0] for r in q("SELECT follower_id FROM follows WHERE college_id=?", (event["college_id"],))]
             core.notify_many(fol, "event", f"Registrations are open for {data['title']}.", url_for("events.detail", eid=eid))
         core.audit("event.edit", f"#{eid}")
-        flash("Event saved.", "success")
+        flash("Saved.", "success")
         return redirect(url_for("studio.event", eid=eid))
-    return render_template("studio/event_form.html", e=event, active=f"ev{eid}", **_sub_ctx(event))
+    return _wizard(dict(event), "edit", active=f"ev{eid}", **_sub_ctx(event))
 
 
 def _sub_ctx(event):
@@ -356,11 +533,13 @@ def event(eid):
     winners = core.event_winners(eid)
     teams = sorted({r["team_name"] for r in regs if r["status"] == "confirmed" and r["team_name"]}, key=str.lower)
     parent = q("SELECT id, title FROM events WHERE id=?", (e["parent_id"],), one=True) if e["parent_id"] else None
+    scope = e["parent_id"] or eid
     return render_template("studio/event.html", e=e, stats=stats, parent=parent, track=festlib.track_of(e), regs=regs, payments=payments, schedule=schedule,
                            coupons=coupons, news=news, faqs=faqs, rooms=rooms, staff=staff, role=role,
                            winners=winners, teams=teams, win_titles=core.WIN_TITLES, win_points=core.WIN_POINTS,
                            food=core.food_estimate(e, stats), default_start=core.iso(core.parse_dt(e["start_dt"])),
-                           default_finish=core.iso(core.parse_dt(e["end_dt"])), sessions=scheduler.sessions(eid),
+                           default_finish=core.iso(core.parse_dt(e["end_dt"])), scope_id=scope,
+                           bd=scheduler.board(scope, [eid]), flow=None if e["parent_id"] else scheduler.flow(eid),
                            busy_count=scalar("""SELECT COUNT(DISTINCT b.user_id) FROM busy_times b JOIN registrations r
                                                 ON r.user_id=b.user_id AND r.event_id=? AND r.status='confirmed'
                                                 WHERE b.event_id IS NULL OR b.event_id=?""", (eid, eid)),
@@ -393,7 +572,8 @@ def _fest_room(e, role):
     news = q("""SELECT a.*, u.name author FROM announcements a LEFT JOIN users u ON u.id=a.created_by
                 WHERE a.event_id=? ORDER BY a.created_at DESC""", (eid,))
     return render_template("studio/fest.html", e=e, groups=groups, subs=subs, kpis=kpis, orders=pending, news=news, role=role,
-                           lead=role in ("owner", "dev", "lead"), active=f"ev{eid}", CATS=core.CATEGORIES)
+                           lead=role in ("owner", "dev", "lead"), active=f"ev{eid}", CATS=core.CATEGORIES, scope_id=eid,
+                           bd=scheduler.board(eid), flow=scheduler.flow(eid), default_start=core.iso(core.parse_dt(e["start_dt"])))
 
 
 @bp.route("/events/<int:eid>/tracks", methods=["POST"])
@@ -463,12 +643,74 @@ def sub_add(eid):
     if fee and not owner["upi_id"]:
         flash("Add the college's UPI ID in Settings → Payments before adding paid events.", "error")
         return back(eid, "events")
+    if scalar("SELECT 1 FROM events WHERE parent_id=? AND lower(title)=lower(?) AND is_removed=0", (eid, title.strip())):
+        flash(f"There's already an event called “{title.strip()}” in this fest.", "error")
+        return back(eid, "events")
+    start = core.parse_dt(f.get("start_dt")) or core.parse_dt(e["start_dt"])
+    end = core.parse_dt(f.get("end_dt")) or core.parse_dt(e["end_dt"])
+    if end <= start:
+        flash("The event must end after it starts.", "error")
+        return back(eid, "events")
     sid = festlib.add_sub(e, t["id"], title, category=f.get("category") or e["category"], fee=fee,
                           fee_type="team" if f.get("fee_type") == "team" and team > 1 else "person", team_size=team,
-                          label=f.get("label"), capacity=cap)
+                          label=f.get("label"), capacity=cap, venue=(f.get("venue") or "").strip()[:120] or None,
+                          start_dt=core.iso(start), end_dt=core.iso(end))
+    scheduler.ensure_default_slot(q("SELECT * FROM events WHERE id=?", (sid,), one=True))
     festlib.sync(eid)
     core.audit("fest.event", f"{e['title']}: {title} (#{sid})")
-    flash(f"{title} added to {t['name']}.", "success")
+    flash(f"{title} added to {t['name']}. It runs as one slot for now; split it into time slots under Slots & flow.", "success")
+    return back(eid, "events")
+
+
+def _remove_sub(e):
+    """Take an event out of its fest. Refused once people have paid for it (close it instead)."""
+    paid = scalar("""SELECT COUNT(*) FROM payments WHERE event_id=? AND amount>0 AND status IN ('paid','submitted')""", (e["id"],))
+    if paid:
+        return False, f"{e['title']}: {paid} {'person has' if paid == 1 else 'people have'} paid for it. Close it instead, or cancel and refund them first."
+    people = [r[0] for r in q("""SELECT user_id FROM registrations WHERE event_id=? AND status IN
+                                 ('confirmed','payment_review','pending_payment','waitlisted')""", (e["id"],))]
+    fest_title = scalar("SELECT title FROM events WHERE id=?", (e["parent_id"],))
+    core.notify_many(people, "event", f"{e['title']} was removed from {fest_title} by the organisers. Your other events are unchanged.",
+                     url_for("events.tickets"), e["college_id"])
+    core.delete_upload(e["banner"])
+    ex("DELETE FROM events WHERE id=?", (e["id"],))
+    core.audit("fest.event.remove", f"{fest_title}: {e['title']} (#{e['id']})")
+    return True, f"{e['title']} removed" + (f" ({len(people)} registrations cancelled and told)" if people else "") + "."
+
+
+@bp.route("/events/<int:eid>/remove", methods=["POST"])
+def sub_remove(eid):
+    e = q("SELECT * FROM events WHERE id=?", (eid,), one=True) or abort(404)
+    if not e["parent_id"]:
+        abort(400)
+    need(e["parent_id"], "lead")
+    ok, msg = _remove_sub(e)
+    flash(msg, "success" if ok else "error")
+    festlib.sync(e["parent_id"])
+    return back(e["parent_id"], "events")
+
+
+@bp.route("/events/<int:eid>/subs/remove", methods=["POST"])
+def subs_remove(eid):
+    """Remove several of a fest's events at once (the tick boxes)."""
+    need(eid, "lead")
+    picked = {int(x) for x in request.form.getlist("sub") if x.isdigit()}
+    subs = [s for s in q("SELECT * FROM events WHERE parent_id=? AND is_removed=0", (eid,)) if s["id"] in picked]
+    if not subs:
+        flash("Tick the events you want to remove first.", "error")
+        return back(eid, "events")
+    done, refused = 0, []
+    for s_ in subs:
+        ok, msg = _remove_sub(s_)
+        if ok:
+            done += 1
+        else:
+            refused.append(msg)
+    festlib.sync(eid)
+    if done:
+        flash(f"Removed {done} event{'s' if done != 1 else ''}.", "success")
+    for msg in refused[:4]:
+        flash(msg, "error")
     return back(eid, "events")
 
 
@@ -497,7 +739,11 @@ def payment_action(pid, action):
             if x["id"] in cancelled:
                 ex("UPDATE payments SET status='rejected', note='Registration was cancelled' WHERE id=?", (x["id"],))
             else:
-                confirm(x["registration_id"], x["id"], g.user["id"])
+                confirm(x["registration_id"], x["id"], g.user["id"], place=False)
+        for ev_id in {x["event_id"] for x in group if x["id"] not in cancelled}:
+            ev = q("SELECT id, parent_id FROM events WHERE id=?", (ev_id,), one=True)
+            if ev:
+                scheduler.place_new(ev["parent_id"] or ev["id"], actor_id=g.user["id"])
         if cancelled and len(cancelled) == len(group):
             flash("This registration was cancelled, so the payment can't be approved. Refund it if money arrived.", "error")
         else:
@@ -543,21 +789,6 @@ def attendance(rid):
     return back(r["event_id"], "registrations")
 
 
-@bp.route("/registrations/<int:rid>/slot", methods=["POST"])
-def slot(rid):
-    r = _reg(rid)
-    need(r["event_id"], "lead")
-    s, e = core.parse_dt(request.form.get("slot_start")), core.parse_dt(request.form.get("slot_end"))
-    venue = (request.form.get("slot_venue") or "").strip()[:80] or None
-    ex("UPDATE registrations SET slot_start=?, slot_end=?, slot_venue=? WHERE id=?", (core.iso(s), core.iso(e), venue, rid))
-    if s and venue:
-        title = scalar("SELECT title FROM events WHERE id=?", (r["event_id"],))
-        core.notify(r["user_id"], "slot", f"Your slot for {title}: {s.strftime('%d %b, %I:%M %p')} in {venue}.",
-                    url_for("events.ticket", code=r["pass_code"]))
-    flash("Slot saved.", "success")
-    return back(r["event_id"], "registrations")
-
-
 @bp.route("/registrations/<int:rid>/status", methods=["POST"])
 def reg_status(rid):
     r = _reg(rid)
@@ -573,6 +804,7 @@ def reg_status(rid):
             flash("This ticket wasn't paid for (or was refunded). Ask them to register again.", "error")
         else:
             ex("UPDATE registrations SET status='confirmed' WHERE id=?", (rid,))
+            scheduler.place_new(e["parent_id"] or e["id"], actor_id=g.user["id"])
             flash("Registration restored.", "success")
     else:
         from blueprints.events import cancel_reg
@@ -584,117 +816,208 @@ def reg_status(rid):
     return back(r["event_id"], "registrations")
 
 
-def _plan_params(e):
-    f = request.form
-    start = core.parse_dt(f.get("slot_start"))
-    finish = core.parse_dt(f.get("slot_finish")) if f.get("slot_finish") else None
-    try:
-        duration = min(600, max(1, int(f.get("duration") or 10)))
-        gap = min(240, max(0, int(f.get("gap") or 0)))
-        buffer_min = min(240, max(0, int(f.get("buffer") or 10)))
-    except ValueError:
-        duration, gap, buffer_min = 10, 5, 10
-    rooms = [x for x in (f.get("rooms") or "").split(",") if x.strip()] or [e["venue"]]
-    breaks = scheduler.parse_breaks(f.get("breaks"), start) if start else []
-    return {"start": start, "finish": finish, "duration": duration, "gap": gap, "buffer_min": buffer_min, "rooms": rooms,
-            "breaks": breaks, "keep_locked": bool(f.get("keep_locked")), "announce": bool(f.get("announce")),
-            "form": {k: f.get(k, "") for k in ("slot_start", "slot_finish", "duration", "gap", "buffer", "rooms", "breaks",
-                                               "keep_locked", "announce")}}
-
-
-@bp.route("/events/<int:eid>/slots", methods=["POST"])
-def slots(eid):
-    """Smart slot planner: Preview shows the plan without saving; Allocate saves it and notifies people whose slot changed."""
-    need(eid, "lead")
+# ================================================================== time slots, allocation and the event-day flow
+def _scope_target(eid):
+    """For slot pages: (scope id, [event ids] or None). A fest works on all its events; one of its events on itself."""
     e = q("SELECT * FROM events WHERE id=?", (eid,), one=True) or abort(404)
-    pp = _plan_params(e)
-    if not pp["start"]:
+    return e, (e["parent_id"] or e["id"]), ([e["id"]] if e["parent_id"] else None)
+
+
+def _back_slots(eid):
+    nxt = request.form.get("next") or ""
+    if nxt.startswith("/studio/") and "//" not in nxt:
+        return redirect(nxt)
+    return back(eid, "slots")
+
+
+def _slot_form(prefix=""):
+    f = request.form
+    s, e = core.parse_dt(f.get(prefix + "start")), core.parse_dt(f.get(prefix + "end"))
+    return s, e, (f.get(prefix + "venue") or "").strip()[:80], _int(f.get(prefix + "capacity"), 1, 100000, 20), \
+        (f.get(prefix + "label") or "").strip()[:40]
+
+
+@bp.route("/events/<int:eid>/slots/generate", methods=["POST"])
+def slots_generate(eid):
+    """Make back-to-back slots for one or more events (e.g. 5 slots of 60 minutes, 20 members each)."""
+    need(eid, "lead")
+    e, scope, only = _scope_target(eid)
+    allowed = [x["id"] for x in scheduler.scope_events(scope)] if not only else only
+    if e["kind"] == "fest":
+        picked = [int(x) for x in request.form.getlist("event_ids") if x.isdigit() and int(x) in allowed]
+    else:
+        picked = [e["id"]]
+    f = request.form
+    start = core.parse_dt(f.get("start"))
+    minutes, gap, count = _int(f.get("minutes"), 5, 1440, 60), _int(f.get("gap"), 0, 600, 0), _int(f.get("count"), 1, 48, 3)
+    capacity = _int(f.get("capacity"), 1, 100000, 20)
+    if not picked:
+        flash("Tick at least one event.", "error")
+        return _back_slots(eid)
+    if not start:
         flash("Pick when the first slot starts.", "error")
-        return back(eid, "slots")
-    if pp["finish"] and pp["finish"] <= pp["start"]:
-        flash("The finish time must be after the first slot.", "error")
-        return back(eid, "slots")
-    result = scheduler.plan(eid, pp["start"], pp["duration"], pp["gap"], pp["rooms"], pp["finish"], pp["breaks"],
-                            pp["buffer_min"], pp["keep_locked"])
-    if not result["units"]:
-        flash("No confirmed participants to give slots to yet.", "error")
-        return back(eid, "slots")
+        return _back_slots(eid)
+    made, freed = scheduler.generate(picked, start, minutes, gap, count, capacity, f.get("venue"), replace=bool(f.get("replace")))
+    for ev_id in picked:                                   # an event always has at least one slot
+        scheduler.ensure_default_slot(q("SELECT * FROM events WHERE id=?", (ev_id,), one=True))
+    res = scheduler.place_new(scope, actor_id=g.user["id"])
+    core.audit("slots.generate", f"#{scope}: {made} slots for {len(picked)} events")
+    msg = f"Made {made} slot{'s' if made != 1 else ''} for {len(picked)} event{'s' if len(picked) != 1 else ''}."
+    if freed:
+        msg += f" {len(freed)} people from the old slots were re-allocated."
+    if res["unplaced"]:
+        msg += f" {sum(u['size'] for u, _ in res['unplaced'])} people still need a slot: see the list below."
+    flash(msg, "success" if not res["unplaced"] else "info")
+    return _back_slots(eid)
+
+
+@bp.route("/events/<int:eid>/slots/add", methods=["POST"])
+def slot_add(eid):
+    need(eid, "lead")
+    e = q("SELECT * FROM events WHERE id=? AND kind!='fest'", (eid,), one=True) or abort(404)
+    s, end, venue, cap, label = _slot_form()
+    if not s or not end or end <= s:
+        flash("A slot needs a start and an end (after the start).", "error")
+        return _back_slots(e["parent_id"] or eid)
+    scheduler.add_slot(eid, s, end, venue, cap, label)
+    res = scheduler.place_new(e["parent_id"] or eid, actor_id=g.user["id"])
+    flash(f"Slot added to {e['title']}." + (" People who had no slot were placed." if res["moves"] else ""), "success")
+    return _back_slots(e["parent_id"] or eid)
+
+
+@bp.route("/slots/<int:sid>/save", methods=["POST"])
+def slot_save(sid):
+    sl = q("SELECT * FROM event_slots WHERE id=?", (sid,), one=True) or abort(404)
+    need(sl["event_id"], "lead")
+    e = q("SELECT * FROM events WHERE id=?", (sl["event_id"],), one=True)
+    s, end, venue, cap, label = _slot_form()
+    if not s or not end or end <= s:
+        flash("A slot needs a start and an end (after the start).", "error")
+        return _back_slots(e["parent_id"] or e["id"])
+    moved = scheduler.save_slot(sl, s, end, venue, cap, label)
+    fresh = q("SELECT * FROM event_slots WHERE id=?", (sid,), one=True)
+    scheduler.tell([(r, fresh) for r in moved], g.user["id"], why="Your slot was changed by the organisers.")
+    load = scalar("SELECT COUNT(*) FROM registrations WHERE slot_id=? AND status='confirmed'", (sid,)) or 0
+    flash("Slot saved." + (f" {len(moved)} people in it were told the new time." if moved else "")
+          + (f" It now has {load} members for {cap} places: move some, or re-allocate." if load > cap else ""),
+          "success" if load <= cap else "info")
+    return _back_slots(e["parent_id"] or e["id"])
+
+
+@bp.route("/slots/<int:sid>/delete", methods=["POST"])
+def slot_delete(sid):
+    sl = q("SELECT * FROM event_slots WHERE id=?", (sid,), one=True) or abort(404)
+    need(sl["event_id"], "lead")
+    e = q("SELECT * FROM events WHERE id=?", (sl["event_id"],), one=True)
+    if (scalar("SELECT COUNT(*) FROM event_slots WHERE event_id=?", (e["id"],)) or 0) <= 1:
+        flash("An event needs at least one slot. Edit this one instead.", "error")
+        return _back_slots(e["parent_id"] or e["id"])
+    freed = scheduler.delete_slot(sl)
+    res = scheduler.place_new(e["parent_id"] or e["id"], actor_id=g.user["id"])
+    left = sum(u["size"] for u, _ in res["unplaced"] if u["event_id"] == e["id"])
+    flash("Slot removed." + (f" {len(freed) - left} of its {len(freed)} people were moved to other slots." if freed else "")
+          + (f" {left} still need a slot." if left else ""), "success" if not left else "info")
+    return _back_slots(e["parent_id"] or e["id"])
+
+
+@bp.route("/events/<int:eid>/allocate", methods=["POST"])
+def allocate(eid):
+    """Slot allocator: Preview shows the plan without saving; Allocate saves it and tells everyone whose slot changed."""
+    need(eid, "lead")
+    e, scope, only = _scope_target(eid)
+    mode = "all" if request.form.get("mode") == "all" else "new"
+    keep = bool(request.form.get("keep_locked")) or mode == "new"
+    result = scheduler.plan(scope, mode=mode, keep_locked=keep, event_ids=only)
+    if not result["total"]:
+        flash("No confirmed participants to allocate yet.", "info")
+        return _back_slots(eid)
     if request.form.get("action") != "apply":
-        return render_template("studio/slot_plan.html", e=e, r=result, form=pp["form"], active=f"ev{eid}")
-    changed = scheduler.apply(eid, result)
-    for r, s_, e_, room in changed:
-        code = scalar("SELECT pass_code FROM registrations WHERE id=?", (r["id"],))
-        core.notify(r["user_id"], "slot", f"Your slot for {e['title']}: {s_.strftime('%a %d %b, %I:%M %p')} in {room}. "
-                    "Your ticket has a new slot QR.", url_for("events.ticket", code=code), e["college_id"])
-    if pp["announce"] and result["placed"]:
-        body = (f"Personal slots are live for {result['people']} participants across {', '.join(result['rooms'])}, "
-                f"{result['first'].strftime('%a %d %b, %I:%M %p')} to {result['last'].strftime('%I:%M %p')}, "
-                f"{pp['duration']} min each. Open your ticket for your exact time and room, and show its slot QR at your "
-                f"slot's desk. Arrive 10 minutes early.")
+        return render_template("studio/slot_plan.html", e=e, r=result, mode=mode, keep=keep, announce=request.form.get("announce"),
+                               active=f"ev{eid}")
+    changed = scheduler.apply(result)
+    scheduler.tell(changed, g.user["id"])
+    if request.form.get("announce") and changed:
+        body = (f"Time slots are allocated for {result['people']} participants. Open your ticket: your task list shows each "
+                "event's slot, and each event's QR only works in your own slot. Please be there 10 minutes early.")
         ex("INSERT INTO announcements (event_id, title, body, priority, kind, created_by) VALUES (?,?,?,?,?,?)",
            (eid, "Your slots are out", body, "important", "slot", g.user["id"]))
-    core.audit("slots.allocate", f"{e['title']}: {result['people']} placed, {len(result['unplaced'])} unplaced")
-    msg = f"Slots allocated for {result['people']} people; {len(changed)} notified about a new or changed slot."
-    if result["unplaced"]:
-        msg += f" {len(result['unplaced'])} couldn't be placed: add a room, extend the finish time or move them by hand."
-    flash(msg, "success" if not result["unplaced"] else "info")
-    return back(eid, "slots")
+    core.audit("slots.allocate", f"#{eid} {mode}: {result['people']}/{result['total']} placed, {len(changed)} changed")
+    left = sum(u["size"] for u, _ in result["unplaced"])
+    flash(f"Allocated: {result['people']} of {result['total']} people have a slot; {len(changed)} were told about a new slot."
+          + (f" {left} couldn't be placed (reasons are listed): add a slot or place them by hand." if left else ""),
+          "success" if not left else "info")
+    return _back_slots(eid)
 
 
 @bp.route("/events/<int:eid>/slots/move", methods=["POST"])
 def slot_move(eid):
-    """Exception: move a team (or a solo participant) to another slot. The new slot is locked so re-planning keeps it."""
-    need(eid, "lead")
-    e = q("SELECT * FROM events WHERE id=?", (eid,), one=True) or abort(404)
-    r = q("SELECT * FROM registrations WHERE id=? AND event_id=?", (request.form.get("rid", type=int), eid), one=True)
-    if not r:
-        abort(404)
-    target = request.form.get("target") or ""
-    if target and target != "custom":
-        sx = next((x for x in scheduler.sessions(eid) if x["key"] == target), None)
-        if not sx:
-            flash("That slot no longer exists.", "error")
-            return back(eid, "slots")
-        start, end, room = core.parse_dt(sx["start"]), core.parse_dt(sx["end"]), sx["room"]
-    else:
-        start = core.parse_dt(request.form.get("new_start"))
-        room = (request.form.get("new_room") or "").strip()[:80]
-        if not start or not room:
-            flash("Give the new slot a time and a room.", "error")
-            return back(eid, "slots")
-        old = (core.parse_dt(r["slot_end"]) - core.parse_dt(r["slot_start"])) if r["slot_start"] and r["slot_end"] else None
-        end = start + (old or timedelta(minutes=10))
-    if r["team_name"]:
-        members = q("""SELECT * FROM registrations WHERE event_id=? AND status='confirmed' AND lower(team_name)=lower(?)""",
-                    (eid, r["team_name"]))
-    else:
-        members = [r]
-    sharing = [x for x in scheduler.sessions(eid) if x["key"] == scheduler.session_key(core.iso(start), room)]
-    for m in members:
-        ex("UPDATE registrations SET slot_start=?, slot_end=?, slot_venue=?, slot_locked=1, slot_in_at=NULL WHERE id=?",
-           (core.iso(start), core.iso(end), room, m["id"]))
-        core.notify(m["user_id"], "slot", f"Your slot for {e['title']} was changed by the organisers: "
-                    f"{start.strftime('%a %d %b, %I:%M %p')} in {room}. Use the new slot QR on your ticket.",
-                    url_for("events.ticket", code=m["pass_code"]), g.user["id"])
+    """Exception: put a person, or their whole team, in a chosen slot. It's locked, so re-allocating keeps it."""
+    r = q("SELECT * FROM registrations WHERE id=?", (request.form.get("rid", type=int),), one=True) or abort(404)
+    need(r["event_id"], "lead")
+    sl = q("SELECT * FROM event_slots WHERE id=? AND event_id=?", (request.form.get("slot_id", type=int), r["event_id"]), one=True)
+    if not sl or r["status"] != "confirmed":
+        flash("Pick one of this event's slots for a confirmed participant.", "error")
+        return _back_slots(eid)
+    ev = q("SELECT * FROM events WHERE id=?", (r["event_id"],), one=True)
+    moved, regs, warn = scheduler.move_unit(r["event_id"], r, sl)
+    text = scheduler.slot_text(sl, venue=ev["venue"])
+    for m in moved:
+        core.notify(m["user_id"], "slot", f"Your slot for {ev['title']} was set by the organisers: {text}. "
+                    "Use the new QR on your ticket.", url_for("events.ticket", code=m["pass_code"]), g.user["id"])
     who = f"Team {r['team_name']}" if r["team_name"] else scalar("SELECT name FROM users WHERE id=?", (r["user_id"],))
-    core.audit("slots.move", f"{e['title']}: {who} -> {core.iso(start)} {room}")
-    note = " That slot already had someone in it, so it's now shared." if sharing and \
-        any(mm["id"] not in {x["id"] for x in members} for mm in sharing[0]["members"]) else ""
-    flash(f"{who} moved to {start.strftime('%I:%M %p').lstrip('0')} in {room} and notified. This slot is locked, "
-          f"so re-planning won't change it.{note}", "success")
-    return back(eid, "slots")
+    core.audit("slots.move", f"{ev['title']}: {who} -> slot #{sl['id']}")
+    flash(f"{who} is now in {text} and locked there{', and was notified' if moved else ''}."
+          + (" Heads up: " + "; ".join(warn) + "." if warn else ""), "success" if not warn else "info")
+    return _back_slots(eid)
 
 
 @bp.route("/events/<int:eid>/slots/unlock", methods=["POST"])
 def slot_unlock(eid):
-    need(eid, "lead")
-    r = q("SELECT * FROM registrations WHERE id=? AND event_id=?", (request.form.get("rid", type=int), eid), one=True) or abort(404)
+    r = q("SELECT * FROM registrations WHERE id=?", (request.form.get("rid", type=int),), one=True) or abort(404)
+    need(r["event_id"], "lead")
     if r["team_name"]:
-        ex("UPDATE registrations SET slot_locked=0 WHERE event_id=? AND lower(team_name)=lower(?)", (eid, r["team_name"]))
+        ex("UPDATE registrations SET slot_locked=0 WHERE event_id=? AND lower(team_name)=lower(?)", (r["event_id"], r["team_name"]))
     else:
         ex("UPDATE registrations SET slot_locked=0 WHERE id=?", (r["id"],))
-    flash("Unlocked. The next re-plan may move them.", "info")
-    return back(eid, "slots")
+    flash("Unlocked. Re-allocating everyone may now move them.", "info")
+    return _back_slots(eid)
+
+
+@bp.route("/events/<int:eid>/flow", methods=["POST"])
+def flow_save(eid):
+    """The event-day order the organisers dragged into place: entry, then events and meals."""
+    e = q("SELECT * FROM events WHERE id=?", (eid,), one=True) or abort(404)
+    if e["parent_id"]:
+        abort(400)
+    need(eid, "lead")
+    try:
+        items = json.loads(request.form.get("flow") or "[]")
+    except ValueError:
+        items = None
+    if not isinstance(items, list):
+        flash("Couldn't read the new order. Try again.", "error")
+        return _back_slots(eid)
+    clean, errors = [], []
+    for it in items[:150]:
+        if not isinstance(it, dict):
+            continue
+        key = str(it.get("key") or "")
+        if key.startswith("food") or key.startswith("new"):
+            s, en = core.parse_dt(it.get("start")), core.parse_dt(it.get("end"))
+            if s and en and en <= s:
+                errors.append(f"{(it.get('title') or 'A meal').strip()} must end after it starts.")
+                continue
+        clean.append({"key": key, "title": it.get("title"), "start": it.get("start"), "end": it.get("end"), "venue": it.get("venue")})
+    if errors:
+        for m in errors:
+            flash(m, "error")
+        return _back_slots(eid)
+    scheduler.save_flow(eid, clean)
+    meals = scalar("SELECT COUNT(*) FROM flow_items WHERE scope_id=? AND kind='food'", (eid,)) or 0
+    ex("UPDATE events SET meals_count=? WHERE id=?", (meals, eid))
+    core.audit("flow.save", f"#{eid}: {len(clean)} items")
+    flash("Event-day order saved. Every participant's task list follows it now.", "success")
+    return _back_slots(eid)
 
 
 @bp.route("/events/<int:eid>/schedule", methods=["POST"])
@@ -911,24 +1234,25 @@ def export(eid):
     return Response("﻿" + buf.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={fname}"})
 
 
-# ================================================================== check-in desk
+# ================================================================== check-in desks
 STATION_INFO = {
-    "entry": ("IN", "Entry gate", "🚪", "Mark people as arrived at the venue.", "#2F80ED"),
-    "slot": ("SLOT", "Slot desk", "⏱️", "Accept people only into the exact slot (time + room) they were given.", "#9B51E0"),
-    "completion": ("DONE", "Event completion", "🎯", "When someone finishes, unlock their certificate.", "#F2994A"),
-    "food": ("FOOD", "Food counter", "🍽️", "Serve each meal once, only after they've completed their event.", "#27AE60"),
+    "entry": ("IN", "Entry gate", "🚪", "Everyone starts here. Marks people as arrived.", "#2F80ED"),
+    "event": ("EV", "Event desk", "🎯", "At an event, in one time slot. Only people booked into that slot are accepted. "
+              "Unlocks their certificate.", "#9B51E0"),
+    "food": ("FOOD", "Food counter", "🍽️", "Serve a meal once, when it's next on each person's list.", "#27AE60"),
 }
 
 
 @bp.route("/scan")
 def scan_pick():
-    """Studio-wide 'Scan QR': pick the event, then the task."""
+    """Studio-wide 'Scan QR': pick the event day, then the desk."""
     ids = core.managed_event_ids(g.user)
     if not ids:
         abort(403)
     c, a = in_clause(ids)
     events = q(f"""SELECT e.*, f.title fest FROM events e LEFT JOIN events f ON f.id=e.parent_id WHERE e.id IN {c} AND e.is_removed=0
-                   ORDER BY CASE WHEN e.end_dt >= ? THEN 0 ELSE 1 END, e.start_dt""", a + [core.now_iso()])
+                   AND (e.parent_id IS NULL OR e.parent_id NOT IN {c})
+                   ORDER BY CASE WHEN e.end_dt >= ? THEN 0 ELSE 1 END, e.start_dt""", a + a + [core.now_iso()])
     if len(events) == 1:
         return redirect(url_for("studio.checkin", eid=events[0]["id"]))
     return render_template("studio/scan_pick.html", events=events, active="scan")
@@ -937,11 +1261,25 @@ def scan_pick():
 @bp.route("/events/<int:eid>/checkin")
 @bp.route("/events/<int:eid>/scan")
 def checkin(eid):
-    """Scan hub: four separate scanners, one per task, so no QR can be scanned at the wrong desk."""
+    """Scan hub: one scanner per kind of desk, so a QR can never be marked at the wrong desk."""
     need(eid)
     e = q("SELECT * FROM events WHERE id=?", (eid,), one=True) or abort(404)
-    stats = core.event_stats(eid)
-    return render_template("studio/scan_hub.html", e=e, stats=stats, info=STATION_INFO, active=f"ev{eid}")
+    scope = e["parent_id"] or e["id"]
+    return render_template("studio/scan_hub.html", e=e, n=journey.counts(scope), info=STATION_INFO,
+                           meals=journey.desk_meals(scope), active=f"ev{eid}")
+
+
+def _auto_slot(slots, chosen):
+    if chosen:
+        hit = next((s for s in slots if str(s["id"]) == str(chosen)), None)
+        if hit:
+            return hit
+    now = core.now()
+    running = [s for s in slots if core.parse_dt(s["start_dt"]) <= now < core.parse_dt(s["end_dt"])]
+    if running:
+        return running[0]
+    upcoming = [s for s in slots if core.parse_dt(s["start_dt"]) > now]
+    return upcoming[0] if upcoming else (slots[0] if slots else None)
 
 
 @bp.route("/events/<int:eid>/scan/<station>")
@@ -950,39 +1288,64 @@ def scan_station(eid, station):
     if station not in STATION_INFO:
         abort(404)
     e = q("SELECT * FROM events WHERE id=?", (eid,), one=True) or abort(404)
+    scope = e["parent_id"] or e["id"]
     kind, title, emoji, blurb, color = STATION_INFO[station]
-    sessions = []
-    if station == "slot":
-        evs = [e] if e["kind"] != "fest" else q("SELECT * FROM events WHERE parent_id=? ORDER BY title", (eid,))
-        for ev in evs:
-            for sx in scheduler.sessions(ev["id"]):
-                sx["event"] = ev["title"]
-                sx["in"] = sum(1 for m in sx["members"] if m["slot_in_at"])
-                sessions.append(sx)
-        sessions.sort(key=lambda x: (x["start"], x["room"]))
-    col = {"IN": "checkin_time", "SLOT": "slot_in_at", "DONE": "completed_at", "FOOD": "food_at"}[kind]
-    recent = q(f"""SELECT r.*, u.name, u.department, u.avatar, ev.title ev_title, r.{col} at FROM registrations r
-                   JOIN users u ON u.id=r.user_id JOIN events ev ON ev.id=r.event_id
-                   WHERE (ev.id=? OR ev.parent_id=?) AND r.{col} IS NOT NULL ORDER BY r.{col} DESC LIMIT 12""", (eid, eid))
-    return render_template("studio/checkin.html", e=e, stats=core.event_stats(eid), recent=recent, active=f"ev{eid}",
-                           station=kind, slug=station, title=title, emoji=emoji, blurb=blurb, color=color,
-                           sessions=sessions, session=request.args.get("session", ""))
+    desk = q("SELECT * FROM events WHERE id=?", (scope,), one=True)
+    events, slots, slot, expected, meals, meal = [], [], None, [], [], None
+    if station == "event":
+        events = [x for x in scheduler.scope_events(scope) if staff_role(x["id"])]
+        pick = request.args.get("ev", type=int) or (e["id"] if not e["kind"] == "fest" else None)
+        desk = next((x for x in events if x["id"] == pick), None)
+        if desk:
+            slots = scheduler.slots_of(desk["id"])
+            slot = _auto_slot(slots, request.args.get("slot"))
+            if slot:
+                expected = q("""SELECT r.id, r.pass_code, r.team_name, r.completed_at, u.name, u.avatar FROM registrations r
+                                JOIN users u ON u.id=r.user_id WHERE r.slot_id=? AND r.status='confirmed'
+                                ORDER BY lower(COALESCE(r.team_name, u.name)), u.name""", (slot["id"],))
+    elif station == "food":
+        meals = journey.desk_meals(scope)
+        want = request.args.get("meal")
+        meal = next((m for m in meals if m["key"] == want), None)
+        if not meal and meals:
+            now = core.now()
+            meal = next((m for m in meals if m["start"] and m["end"] and core.parse_dt(m["start"]) <= now < core.parse_dt(m["end"])), meals[0])
+    if station == "entry":
+        recent = q("""SELECT u.name, u.department, u.avatar, MIN(r.checkin_time) at FROM registrations r JOIN users u ON u.id=r.user_id
+                      JOIN events ev ON ev.id=r.event_id WHERE (ev.id=? OR ev.parent_id=?) AND r.checkin_time IS NOT NULL
+                      GROUP BY r.user_id, u.name, u.department, u.avatar ORDER BY at DESC LIMIT 12""", (scope, scope))
+    elif station == "event":
+        recent = q("""SELECT u.name, u.department, u.avatar, r.completed_at at, ev.title ev_title FROM registrations r
+                      JOIN users u ON u.id=r.user_id JOIN events ev ON ev.id=r.event_id
+                      WHERE r.event_id=? AND r.completed_at IS NOT NULL ORDER BY r.completed_at DESC LIMIT 12""",
+                   (desk["id"] if desk else 0,))
+    else:
+        recent = q("""SELECT u.name, u.department, u.avatar, m.created_at at FROM task_marks m JOIN users u ON u.id=m.user_id
+                      WHERE m.scope_id=? AND m.task_key=? AND m.state='done' ORDER BY m.created_at DESC LIMIT 12""",
+                   (scope, meal["key"] if meal else ""))
+    return render_template("studio/checkin.html", e=e, scope=scope, desk=desk, n=journey.counts(scope), recent=recent,
+                           active=f"ev{eid}", station=kind, slug=station, title=title, emoji=emoji, blurb=blurb, color=color,
+                           events=events, slots=slots, slot=slot, expected=expected, meals=meals, meal=meal,
+                           slot_name=lambda s_: scheduler.slot_name(s_, slots), slot_text=scheduler.slot_text)
 
 
 @bp.route("/api/checkin", methods=["POST"])
 def api_checkin():
-    """One scan at a desk. The QR says which step it is (entry, completion, food); the order is enforced."""
+    """One scan at a desk. The desk says what it's for (entry, an event in one slot, a meal); the QR must match."""
     data = request.get_json(silent=True) or {}
     try:
         eid = int(data.get("event_id") or 0) or None
     except (TypeError, ValueError):
         eid = None
-    res = journey.scan(data.get("code"), station=(data.get("station") or "").upper(), desk_event=eid,
-                       can_staff=staff_role, actor_id=g.user["id"], session=data.get("session") or "")
-    if eid and staff_role(eid):
-        s = core.event_stats(eid)
-        res.update(attended=s["attended"], registered=s["registered"], completed=s["completed"], fed=s["fed"],
-                   slot_in=s["slot_in"])
+    if not eid or not staff_role(eid):
+        return jsonify(ok=False, level="error", message="You don't run a desk for this event.")
+    res = journey.scan(data.get("code"), station=(data.get("station") or "").upper(), desk_event=eid, can_staff=staff_role,
+                       actor_id=g.user["id"], slot_id=data.get("slot"), meal=data.get("meal") or "", skip=bool(data.get("skip")))
+    e = q("SELECT id, parent_id FROM events WHERE id=?", (eid,), one=True)
+    res["n"] = journey.counts(e["parent_id"] or e["id"])
+    if data.get("slot"):
+        res["slot_done"] = scalar("SELECT COUNT(*) FROM registrations WHERE slot_id=? AND status='confirmed' AND completed_at IS NOT NULL",
+                                  (data.get("slot"),))
     return jsonify(res)
 
 

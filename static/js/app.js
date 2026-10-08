@@ -49,6 +49,7 @@
   });
   document.addEventListener("submit", (e) => {
     const f = e.target;
+    if (e.defaultPrevented) return;
     if (f.dataset.confirm && !confirm(f.dataset.confirm)) { e.preventDefault(); return; }
     if (f.dataset.ajax) return;
     const b = f.querySelector("button[type=submit]:not([data-noload]), button:not([type]):not([data-noload])");
@@ -536,6 +537,108 @@
     $$(input.dataset.filter).forEach((row) => { row.hidden = v && !(row.dataset.q || row.textContent.toLowerCase()).includes(v); });
   }));
 
+  // ------------------------------------------------------------ drag to reorder (mouse, touch and pen), like a music queue
+  function sortable(list, opts = {}) {
+    if (!list || list._sortable) return;
+    list._sortable = true;
+    const itemSel = opts.item || "li";
+    list.addEventListener("pointerdown", (e) => {
+      const handle = e.target.closest(opts.handle || ".drag");
+      if (!handle || !list.contains(handle) || handle.disabled) return;
+      const item = handle.closest(itemSel);
+      if (!item || item.classList.contains("fixed")) return;
+      e.preventDefault();
+      const startY = e.clientY, base = item.offsetTop;
+      item.classList.add("dragging");
+      list.classList.add("sorting");
+      try { handle.setPointerCapture(e.pointerId); } catch (err) { /* old browsers */ }
+      const move = (ev) => {
+        const y = ev.clientY;
+        const sibs = $$(itemSel, list).filter((x) => x !== item && !x.classList.contains("fixed") && x.parentElement === list);
+        let target = null, before = true;
+        for (const s of sibs) {
+          const r = s.getBoundingClientRect(), mid = r.top + r.height / 2;
+          const precedes = !!(item.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_PRECEDING);
+          if (precedes && y < mid) { target = s; before = true; break; }
+          if (!precedes && y > mid) { target = s; before = false; }
+        }
+        if (target) { before ? target.before(item) : target.after(item); if (navigator.vibrate) navigator.vibrate(8); }
+        item.style.transform = `translateY(${y - startY - (item.offsetTop - base)}px)`;
+        if (ev.clientY < 70) window.scrollBy(0, -12); else if (ev.clientY > innerHeight - 90) window.scrollBy(0, 12);
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+        item.style.transform = "";
+        item.classList.remove("dragging");
+        list.classList.remove("sorting");
+        item.classList.add("pop");
+        setTimeout(() => item.classList.remove("pop"), 400);
+        opts.onChange && opts.onChange();
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+    });
+  }
+  window.EF.sortable = sortable;
+
+  // ------------------------------------------------------------ Studio: the event-day order (Slots & flow)
+  $$("form[data-flow-form]").forEach((f) => {
+    const list = $("[data-sortable]", f);
+    const swap = (li, dir) => {
+      const other = dir < 0 ? li.previousElementSibling : li.nextElementSibling;
+      if (!other || other.classList.contains("fixed")) return;
+      dir < 0 ? other.before(li) : other.after(li);
+      li.classList.add("pop"); setTimeout(() => li.classList.remove("pop"), 400);
+    };
+    sortable(list);
+    f.addEventListener("click", (e) => {
+      const li = e.target.closest("li.flow-item");
+      if (e.target.closest("[data-up]")) swap(li, -1);
+      else if (e.target.closest("[data-down]")) swap(li, 1);
+      else if (e.target.closest("[data-remove]")) li.remove();
+      else if (e.target.closest("[data-add-meal]")) {
+        const v = (k) => ($(`[data-meal-${k}]`, f)?.value || "").trim();
+        const title = v("title") || "Lunch", start = v("start"), end = v("end"), venue = v("venue");
+        if (start && end && end <= start) { toast("The meal must end after it starts.", "error"); return; }
+        const li2 = document.createElement("li");
+        li2.className = "flow-item food pop";
+        li2.dataset.key = "new-" + Math.random().toString(36).slice(2, 7);
+        li2.dataset.kind = "food"; li2.dataset.title = title; li2.dataset.start = start; li2.dataset.end = end; li2.dataset.venue = venue;
+        const when = start ? new Date(start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + (end ? "–" + new Date(end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "") : "Any time, in this place in the order";
+        li2.innerHTML = `<button type="button" class="drag" aria-label="Drag to reorder">⋮⋮</button><span class="fi-icon">🍽️</span><span class="grow"><b>${esc(title)}</b><small>${esc(when)}${venue ? " · " + esc(venue) : ""}</small></span>
+          <span class="fi-move"><button type="button" class="iconbtn" data-up aria-label="Move up">↑</button><button type="button" class="iconbtn" data-down aria-label="Move down">↓</button></span><button type="button" class="iconbtn" data-remove aria-label="Remove">✕</button>`;
+        list.appendChild(li2);
+        $$("[data-meal-title], [data-meal-start], [data-meal-end], [data-meal-venue]", f).forEach((i) => { i.value = ""; });
+        toast(`${title} added. Drag it into place, then save.`, "success", 2600);
+      }
+    });
+    f.addEventListener("submit", () => {
+      const items = $$("li.flow-item:not(.fixed)", list).map((li) => ({ key: li.dataset.key, title: li.dataset.title || "", start: li.dataset.start || "", end: li.dataset.end || "", venue: li.dataset.venue || "" }));
+      $("input[name=flow]", f).value = JSON.stringify(items);
+    });
+  });
+
+  // ------------------------------------------------------------ small Studio helpers
+  document.addEventListener("change", (e) => {
+    const sel = e.target.closest("select[data-autosubmit]");
+    if (sel && sel.value) { sel.form.requestSubmit ? sel.form.requestSubmit() : sel.form.submit(); }
+    const grp = e.target.closest("[data-check-group]");
+    if (grp) $$(`[data-group="${grp.dataset.checkGroup}"]`).forEach((c) => { c.checked = grp.checked; });
+    if (e.target.matches("[data-group], [data-check-group]")) {
+      const n = $$("input[form=bulk-remove]:checked").length, bar = $("[data-bulk-bar]");
+      if (bar) { bar.hidden = !n; const nb = $("[data-bulk-n]", bar); if (nb) nb.textContent = n; }
+    }
+  });
+  document.addEventListener("click", (e) => {
+    const all = e.target.closest("[data-check-all]"), none = e.target.closest("[data-check-none]"), clr = e.target.closest("[data-bulk-clear]");
+    if (all) $$(`#${all.dataset.checkAll} input[type=checkbox]`).forEach((c) => { c.checked = true; });
+    if (none) $$(`#${none.dataset.checkNone} input[type=checkbox]`).forEach((c) => { c.checked = false; });
+    if (clr) { $$("input[form=bulk-remove], [data-check-group]").forEach((c) => { c.checked = false; }); $("[data-bulk-bar]").hidden = true; }
+  });
+
   // ------------------------------------------------------------ ticket: next step appears by itself after a scan
   const journeyEl = $("[data-journey-poll]");
   if (journeyEl) {
@@ -558,11 +661,63 @@
     document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   }
 
+  // ------------------------------------------------------------ live notice: one notification per event day that updates itself
+  const liveBar = $("[data-live]");
+  let liveSeen = {};
+  try { liveSeen = JSON.parse(sessionStorage.getItem("ef-live") || "{}"); } catch (e) { liveSeen = {}; }
+  async function swReg() {
+    if (!("serviceWorker" in navigator)) return null;
+    try { return await navigator.serviceWorker.getRegistration("/") || await navigator.serviceWorker.register("/sw.js", { scope: "/" }); } catch (e) { return null; }
+  }
+  async function systemNotice(item) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const opts = { body: item.text.replace(/^🔴 Live · /, ""), tag: `ef-live-${item.scope}`, renotify: true, requireInteraction: true,
+                   icon: "/static/img/icon.png", badge: "/static/img/icon.png", data: { url: item.link } };
+    const reg = await swReg();
+    if (reg && reg.showNotification) { reg.showNotification("EventFlow · Live", opts); return; }
+    try { new Notification("EventFlow · Live", opts); } catch (e) { /* phones need the service worker */ }
+  }
+  async function clearSystem(scope) {
+    const reg = await swReg();
+    if (!reg || !reg.getNotifications) return;
+    (await reg.getNotifications({ tag: `ef-live-${scope}` })).forEach((n) => n.close());
+  }
+  function renderLive(items) {
+    if (!liveBar) return;
+    const first = items[0];
+    liveBar.hidden = !first;
+    if (first) {
+      $("[data-live-text]", liveBar).textContent = first.text.replace(/^🔴 Live · /, "");
+      $("[data-live-link]", liveBar).href = first.link;
+      $("[data-live-more]", liveBar).textContent = items.length > 1 ? `+${items.length - 1}` : "";
+    }
+    const ask = $("[data-live-alerts]", liveBar);
+    if (ask) ask.hidden = !("Notification" in window) || Notification.permission !== "default";
+    const now = {};
+    items.forEach((it) => {
+      now[it.scope] = it.stage;
+      if (liveSeen[it.scope] !== it.stage) systemNotice(it);
+    });
+    Object.keys(liveSeen).forEach((k) => { if (!(k in now)) clearSystem(k); });
+    liveSeen = now;
+    try { sessionStorage.setItem("ef-live", JSON.stringify(liveSeen)); } catch (e) { /* private mode */ }
+  }
+  if (liveBar) {
+    renderLive(JSON.parse(liveBar.dataset.live || "[]"));
+    $("[data-live-alerts]", liveBar)?.addEventListener("click", async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const p = await Notification.requestPermission();
+      if (p === "granted") { liveSeen = {}; renderLive(JSON.parse(liveBar.dataset.live || "[]")); toast("Live alerts are on. You'll get a notice each time a slot ends.", "success"); }
+      $("[data-live-alerts]", liveBar).hidden = true;
+    });
+  }
+
   // ------------------------------------------------------------ live counts (notifications, messages, requests)
   async function refreshCounts() {
     if (!loggedIn || document.hidden) return;
     try {
       const r = await api("/api/counts", undefined, "GET");
+      if (r.live && liveBar) { liveBar.dataset.live = JSON.stringify(r.live); renderLive(r.live); }
       $$("[data-count-notifs]").forEach((el) => { el.dataset.n = r.notifications; el.textContent = r.notifications > 99 ? "99+" : r.notifications; });
       $$("[data-count-msgs]").forEach((el) => { el.dataset.n = r.messages; el.textContent = r.messages; });
       $$("[data-count-requests]").forEach((el) => { el.dataset.n = r.requests; el.textContent = r.requests; });

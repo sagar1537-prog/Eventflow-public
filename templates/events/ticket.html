@@ -1,13 +1,26 @@
 {% extends "base.html" %}
 {% from "partials/macros.html" import icon, avatar, reg_pill with context %}
-{% block title %}Ticket · {{ reg.title }}{% endblock %}
+{% block title %}Ticket · {{ fest.title if fest else reg.title }}{% endblock %}
 {% block event_id %}{{ reg.event_id }}{% endblock %}
 {% block content %}
-{% set color = reg.category|cat_color %}
-<div class="page narrow page-enter" style="--c: {{ color }}"{% if steps and current %} data-journey-poll="{{ url_for('events.journey_state', code=reg.pass_code) }}" data-journey-sig="{{ journey_sig }}"{% endif %}>
-  <div class="row between" style="margin-bottom:6px"><a class="link small" href="{{ url_for('events.tickets') }}">All tickets</a>{{ reg_pill(reg.status, pay.status if pay else None) }}</div>
+{% set color = ("Fest" if fest else reg.category)|cat_color %}
+{% set head_title = fest.title if fest else reg.title %}
+{% set head_start = fest.start_dt if fest else reg.start_dt %}
+{% set head_end = fest.end_dt if fest else reg.end_dt %}
+{% set confirmed_n = mine|selectattr('r.status', 'equalto', 'confirmed')|list|length %}
+<div class="page narrow page-enter" style="--c: {{ color }}"{% if steps %} data-journey-poll="{{ url_for('events.journey_state', code=reg.pass_code) }}" data-journey-sig="{{ journey_sig }}"{% endif %}>
+  <div class="row between" style="margin-bottom:6px"><a class="link small" href="{{ url_for('events.tickets') }}">{{ icon("left", "ico sm") }} All tickets</a>
+    {% if fest %}<span class="pill">{{ "🎪 " ~ mine|length ~ " event" ~ ("s" if mine|length != 1 else "") }}</span>{% else %}{{ reg_pill(reg.status, pay.status if pay else None) }}{% endif %}</div>
 
-  {% if reg.status == 'payment_review' %}
+  {% if fest %}
+    {% for p in pending %}{% set r = p %}
+    <div class="status-box {{ 'bad' if r.status == 'pending_payment' else 'wait' }}">
+      <b>{{ r.title }}: {{ {"payment_review": "payment being verified", "pending_payment": ("payment rejected" if r.pay_status == 'rejected' else "payment not finished"), "waitlisted": "on the waitlist"}[r.status] }}</b>
+      <span>{% if r.status == 'payment_review' %}It joins your ticket the moment it's approved.{% elif r.status == 'waitlisted' %}We'll notify you when a seat opens.{% else %}{{ r.pay_note or "Complete the payment to add it to your ticket." }}{% endif %}</span>
+      {% if r.status == 'pending_payment' and r.receipt_no %}<a class="btn brand sm" style="margin-top:10px" href="{{ url_for('events.checkout', receipt=r.receipt_no) }}">Complete payment</a>{% endif %}
+    </div>
+    {% endfor %}
+  {% elif reg.status == 'payment_review' %}
   <div class="status-box wait"><b>Payment being verified</b><span>{{ reg.college }} is checking UTR {{ pay.utr if pay else '' }}. Your QR activates the moment it's approved.</span></div>
   {% elif reg.status == 'pending_payment' %}
   <div class="status-box bad"><b>{{ "Payment rejected" if pay and pay.status == 'rejected' else "Payment not finished" }}</b><span>{{ pay.note if pay and pay.note else "Complete payment to activate this ticket." }}</span>
@@ -18,31 +31,33 @@
   <div class="status-box bad"><b>This ticket was cancelled</b></div>
   {% endif %}
 
-  {% if win %}
+  {% if win and not fest %}
   <a class="win-banner" href="{{ url_for('events.certificate', code=reg.pass_code) }}"><span class="medal">{{ {1: "🥇", 2: "🥈", 3: "🥉"}.get(win.position, "🏅") }}</span>
     <span class="grow"><b>{{ win.title }}!</b><small>+{{ win.points }} points · your certificate of achievement is ready</small></span>{{ icon("right", "ico sm") }}</a>
   {% endif %}
+
   <div class="pass-stage">
     <div class="pass-tilt" data-tilt="7"><div class="pass3d" data-flip title="Tap to flip">
       <div class="pass-face front">
         <div class="pass-top">
           <span class="row nw" style="gap:8px">{{ avatar(reg.college, reg.college_avatar, "xs") }}<small>{{ reg.college }}</small></span>
-          {% if reg.fest_title %}<small class="pass-fest">🎪 {{ reg.fest_title }}</small>{% endif %}
-          <h2>{{ reg.title }}</h2><small>{{ reg.start_dt|dt("%A, %d %B · %I:%M %p") }}</small>
+          {% if fest %}<small class="pass-fest">🎪 One ticket · {{ confirmed_n }} event{{ 's' if confirmed_n != 1 }}</small>{% endif %}
+          <h2>{{ head_title }}</h2><small>{{ head_start|dt("%A, %d %B · %I:%M %p") }}</small>
         </div>
         <div class="perf"><i></i><i></i></div>
         <div class="pass-body">
-          <div class="row nw" style="margin-bottom:6px">{{ avatar(reg.name, reg.avatar, "md") }}<div><b>{{ reg.name }}</b><br><small class="muted">@{{ reg.username }}{% if reg.team_name %} · Team {{ reg.team_name }}{% endif %}</small></div></div>
-          {% if reg.slot_start and reg.status == 'confirmed' %}
-          <div class="slotline" style="margin:10px 0;display:flex">{{ icon("clock", "ico sm") }}<span>Your slot <b>{{ reg.slot_start|time }}–{{ reg.slot_end|time }}</b>, {{ reg.slot_start|dt("%a %d %b") }} · <b>{{ reg.slot_venue }}</b></span></div>
-          {% endif %}
+          <div class="row nw" style="margin-bottom:6px">{{ avatar(reg.name, reg.avatar, "md") }}<div><b>{{ reg.name }}</b><br><small class="muted">@{{ reg.username }}{% if reg.team_name and not fest %} · Team {{ reg.team_name }}{% endif %}</small></div></div>
           {% if current %}
-          <div class="step-label"><span class="step-n">Step {{ current.n }} of {{ steps|length }}</span><b>{{ current.icon }} {{ current.title }}</b></div>
+          <div class="step-label"><span class="step-n">Task {{ current.n }} of {{ steps|length }}</span><b>{{ current.icon }} {{ current.title }}</b>{% if current.sub %}<small>{{ current.sub }}</small>{% endif %}</div>
+          {% if current.qr %}
           <div class="pass-qr step-qr">{{ current.qr|qr }}</div>
           <div class="pass-code">{{ current.reg.pass_code }}</div>
+          {% else %}
+          <div class="pass-qr all-done wait-slot"><span>⏳</span><b>Waiting for your slot</b><small>The organisers allocate time slots. You'll get a notification, and the QR appears here.</small></div>
+          {% endif %}
           <p class="flip-hint">{{ current.hint }}</p>
           {% elif steps %}
-          <div class="pass-qr all-done"><span>🎉</span><b>All steps done</b><small>Thanks for coming! Your certificate{{ 's are' if steps|selectattr('kind', 'equalto', 'DONE')|list|length > 1 else ' is' }} ready below.</small></div>
+          <div class="pass-qr all-done"><span>🎉</span><b>Every task done</b><small>Thanks for coming! Your certificate{{ 's are' if steps|selectattr('kind', 'equalto', 'EV')|list|length > 1 else ' is' }} below.</small></div>
           <div class="pass-code">{{ reg.pass_code }}</div>
           {% else %}
           <div class="pass-qr dim">{{ reg.pass_code|qr }}<span class="lockmsg">QR activates once your ticket is confirmed</span></div>
@@ -52,14 +67,14 @@
         <span class="pass-shine"></span>
       </div>
       <div class="pass-face back">
-        <div class="pass-top"><small>Ticket details</small><h2>{{ reg.title }}</h2></div>
+        <div class="pass-top"><small>Ticket details</small><h2>{{ head_title }}</h2></div>
         <div class="pass-body" style="flex:1">
           <div class="kv">
-            <div class="wide"><small>Venue</small><b>{{ reg.venue }}</b>{% if reg.venue_details %}<br><small>{{ reg.venue_details }}</small>{% endif %}</div>
-            <div><small>Starts</small><b>{{ reg.start_dt|dt("%d %b, %I:%M %p") }}</b></div>
-            <div><small>Ends</small><b>{{ reg.end_dt|dt("%d %b, %I:%M %p") }}</b></div>
+            <div class="wide"><small>Venue</small><b>{{ (fest.venue if fest else reg.venue) }}</b>{% if not fest and reg.venue_details %}<br><small>{{ reg.venue_details }}</small>{% elif fest and fest.venue_details %}<br><small>{{ fest.venue_details }}</small>{% endif %}</div>
+            <div><small>Starts</small><b>{{ head_start|dt("%d %b, %I:%M %p") }}</b></div>
+            <div><small>Ends</small><b>{{ head_end|dt("%d %b, %I:%M %p") }}</b></div>
             <div><small>Food</small><b>{{ {"veg": "Veg", "nonveg": "Non-veg", "none": "No meal"}[reg.food_pref] }}</b></div>
-            <div><small>Paid</small><b>{{ "Free" if not reg.amount else reg.amount|inr }}</b></div>
+            <div><small>Paid</small><b>{% set paid = mine|sum(attribute='r.amount') if fest else reg.amount %}{{ "Free" if not paid else paid|inr }}</b></div>
             <div><small>Holder</small><b>{{ reg.name }}</b></div>
             <div><small>College</small><b>{{ reg.college_name or "—" }}</b></div>
           </div>
@@ -70,39 +85,57 @@
   </div>
 
   <div class="ticket-actions">
-    <a class="btn ghost" href="{{ url_for('events.ics', eid=reg.event_id) }}">{{ icon("calendar", "ico sm") }}Add to calendar</a>
-    {% if reg.map_url %}<a class="btn ghost" href="{{ reg.map_url }}" target="_blank" rel="noopener">{{ icon("pin", "ico sm") }}Directions</a>{% endif %}
-    {% if reg.completed_at or win %}<a class="btn brand" href="{{ url_for('events.certificate', code=reg.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>{% endif %}
-    {% if pay and pay.status in ('paid', 'refunded') and pay.amount %}<a class="btn ghost" href="{{ url_for('events.receipt', receipt=pay.receipt_no) }}">{{ icon("download", "ico sm") }}Receipt</a>{% endif %}
+    <a class="btn ghost" href="{{ url_for('events.ics', eid=scope) }}">{{ icon("calendar", "ico sm") }}Add to calendar</a>
+    {% set map = fest.map_url if fest else reg.map_url %}{% if map %}<a class="btn ghost" href="{{ map }}" target="_blank" rel="noopener">{{ icon("pin", "ico sm") }}Directions</a>{% endif %}
+    {% if not fest and (reg.completed_at or win) %}<a class="btn brand" href="{{ url_for('events.certificate', code=reg.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>{% endif %}
+    {% for rc in receipts %}<a class="btn ghost" href="{{ url_for('events.receipt', receipt=rc) }}">{{ icon("download", "ico sm") }}Receipt{% if receipts|length > 1 %} {{ loop.index }}{% endif %}</a>{% endfor %}
   </div>
+
+  {% if fest and mine %}
+  <section class="card my-events" aria-label="Your events">
+    <div class="card-head"><h3>Your events</h3><a class="link small" href="{{ url_for('events.detail', eid=fest.id) }}">Add more</a></div>
+    {% for m in mine %}{% set r = m.r %}
+    <div class="my-ev">
+      <span class="me-ico" style="--c: {{ r.category|cat_color }}">{{ r.category|cat_emoji }}</span>
+      <span class="grow"><b>{{ r.title }}</b>{% if r.won %} <span title="Winner">🏆</span>{% endif %}
+        <small>{% if r.status == 'confirmed' %}{{ m.slot or "Slot not allocated yet" }}{% else %}{{ {"payment_review": "Payment being verified", "pending_payment": "Payment not finished", "waitlisted": "On the waitlist"}.get(r.status, r.status) }}{% endif %}{% if r.team_name %} · Team {{ r.team_name }}{% endif %}</small></span>
+      {% if r.status == 'confirmed' and (r.completed_at or r.won) %}<a class="btn soft sm" href="{{ url_for('events.certificate', code=r.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>
+      {% elif r.completed_at is none and not r.attended and r.event_status != 'completed' and g.user.id == r.user_id %}
+      <form method="post" action="{{ url_for('events.cancel', code=r.pass_code) }}" data-confirm="Leave {{ r.title }}?{% if r.pay_status == 'paid' and r.pay_amount %} A refund of ₹{{ r.pay_amount }} will be requested.{% endif %}">{{ csrf_field() }}<button class="btn ghost sm">{{ "Leave waitlist" if r.status == 'waitlisted' else "Leave" }}</button></form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
 
   {% if steps %}
   <section class="card journey" aria-label="Your event day">
-    <div class="card-head"><h3>Your event day</h3><span class="pill {{ 'green' if not current else 'amber' }}">{{ steps|selectattr('done')|list|length }} / {{ steps|length }} done</span></div>
-    <p class="small muted" style="margin-top:-4px">Go step by step. Each step has its own QR, and the next one appears here as soon as the volunteer scans the current one.</p>
+    <div class="card-head"><h3>Your event day</h3><span class="pill {{ 'green' if not current else 'amber' }}">{{ steps|selectattr('state', 'in', ['done', 'skipped'])|list|length }} / {{ steps|length }} done</span></div>
+    <p class="small muted" style="margin-top:-4px">Go task by task. Each task has its own QR, and the next one appears on your ticket the moment the current one is scanned.{% if steps|selectattr('kind', 'equalto', 'EV')|list %} An event's QR only works in your own time slot.{% endif %}</p>
     <ol class="jsteps">
       {% for s in steps %}
       <li class="jstep {{ s.state }}">
-        <span class="dot">{% if s.done %}✓{% else %}{{ s.n }}{% endif %}</span>
+        <span class="dot">{% if s.state == 'done' %}✓{% elif s.state == 'skipped' %}↷{% else %}{{ s.n }}{% endif %}</span>
         <div class="grow"><b>{{ s.icon }} {{ s.title }}</b>
-          <small>{% if s.done %}Done {{ s.done_at|dt("%d %b, %I:%M %p") }}{% elif s.state == 'current' %}Now: {{ s.hint }}{% else %}Unlocks after step {{ s.n - 1 }}{% endif %}</small></div>
-        {% if s.cert and s.done %}<a class="btn soft sm" href="{{ url_for('events.certificate', code=s.reg.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>
-        {% elif s.state == 'current' %}<span class="pill amber">Show QR ↑</span>{% elif s.state == 'locked' %}<span class="lock" aria-label="Locked">🔒</span>{% endif %}
+          {% if s.sub %}<span class="jsub">{{ s.sub }}</span>{% endif %}
+          <small>{% if s.state == 'done' %}Done {{ s.done_at|dt("%d %b, %I:%M %p") }}{% elif s.state == 'skipped' %}Marked as missed by the organisers{% elif s.state == 'current' %}Now: {{ s.hint }}{% else %}Unlocks after task {{ s.n - 1 }}{% endif %}</small></div>
+        {% if s.cert and s.state == 'done' %}<a class="btn soft sm" href="{{ url_for('events.certificate', code=s.reg.pass_code) }}">{{ icon("award", "ico sm") }}Certificate</a>
+        {% elif s.state == 'current' and s.qr %}<span class="pill amber">Show QR ↑</span>{% elif s.state == 'locked' %}<span class="lock" aria-label="Locked">🔒</span>{% endif %}
       </li>
       {% endfor %}
     </ol>
   </section>
   {% endif %}
 
-  {% if g.user.id == reg.user_id and reg.status == 'confirmed' and reg.event_status != 'completed' %}
+  {% if g.user.id == reg.user_id and confirmed_n and not ev_finished %}
   <section class="card" id="busy" style="margin-top:22px">
     <div class="card-head"><h3>⏰ Times you can't make it</h3>{% if busy %}<span class="pill">{{ busy|length }}</span>{% endif %}</div>
-    <p class="small muted" style="margin-top:-4px">Got a class, an exam or another event? Add it here and the organisers' slot planner won't give you a slot then.{% if reg.slot_start %} Your slot is already set; ask the organisers if it clashes.{% endif %}</p>
+    <p class="small muted" style="margin-top:-4px">Got a class, an exam or another commitment? Add it and the slot allocator won't give you a slot then.{% if mine|selectattr('slot')|list %} Your slots are already set; ask the organisers if one clashes.{% endif %}</p>
     {% for b in busy %}<div class="busy-row"><span class="grow"><b>{{ b.start_dt|dt("%a %d %b, %I:%M %p") }} – {{ b.end_dt|time }}</b>{% if b.note %}<small class="muted"> · {{ b.note }}</small>{% endif %}</span>
       <form method="post" action="{{ url_for('events.busy_delete', code=reg.pass_code, bid=b.id) }}">{{ csrf_field() }}<button class="btn ghost sm" aria-label="Remove">Remove</button></form></div>{% endfor %}
     <form method="post" action="{{ url_for('events.busy_add', code=reg.pass_code) }}" class="busy-form">
       {{ csrf_field() }}
-      <input type="datetime-local" name="start" required aria-label="Busy from" value="{{ reg.start_dt[:16] }}">
+      <input type="datetime-local" name="start" required aria-label="Busy from" value="{{ head_start[:16] }}">
       <input type="datetime-local" name="end" required aria-label="Busy until">
       <input name="note" maxlength="80" placeholder="Why? (optional)" aria-label="Note">
       <button class="btn soft sm">Add busy time</button>
@@ -112,12 +145,12 @@
 
   {% if news %}
   <section class="card" style="margin-top:22px">
-    <div class="card-head"><h3>Latest updates</h3><a class="link small" href="{{ url_for('events.detail', eid=reg.event_id) }}#updates">All updates</a></div>
+    <div class="card-head"><h3>Latest updates</h3><a class="link small" href="{{ url_for('events.detail', eid=scope) }}#updates">All updates</a></div>
     {% for a in news %}<div class="note {{ 'important' if a.priority == 'important' }} {{ 'slot' if a.kind == 'slot' }}"><span class="bar"></span><div><b>{{ a.title }}</b><p>{{ a.body }}</p><span class="tiny muted">{{ a.created_at|rel }}</span></div></div>{% endfor %}
   </section>
   {% endif %}
 
-  {% if g.user.id == reg.user_id and reg.status not in ('cancelled',) and not reg.attended and reg.event_status != 'completed' %}
+  {% if not fest and g.user.id == reg.user_id and reg.status not in ('cancelled',) and not reg.attended and reg.event_status != 'completed' %}
   <form method="post" action="{{ url_for('events.cancel', code=reg.pass_code) }}" class="center" style="margin-top:24px"
         data-confirm="Cancel your registration for {{ reg.title }}?{% if pay and pay.status == 'paid' and pay.amount %} A refund of ₹{{ pay.amount }} will be requested.{% endif %}">
     {{ csrf_field() }}<button class="btn danger sm">{{ "Leave waitlist" if reg.status == 'waitlisted' else "Cancel registration" }}</button></form>

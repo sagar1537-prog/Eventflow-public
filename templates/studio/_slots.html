@@ -1,0 +1,197 @@
+{% from "partials/macros.html" import icon, empty with context %}
+{# Slots & flow panel. Needs: e (this page's event), bd (scheduler.board), flow (list, or None when the order is set on the fest),
+   lead (can change things), default_start. #}
+{% set is_fest = e.kind == 'fest' %}
+{% set here = request.path ~ '#slots' %}
+<div class="slots-panel">
+  <section class="card slots-top">
+    <div class="st-stats">
+      <div><b>{{ bd.slot_count }}</b><small>time slot{{ 's' if bd.slot_count != 1 }}</small></div>
+      <div><b>{{ bd.people - bd.unplaced }}</b><small>of {{ bd.people }} placed</small></div>
+      <div class="{{ 'warn' if bd.unplaced else 'ok' }}"><b>{{ bd.unplaced }}</b><small>need a slot</small></div>
+    </div>
+    {% if lead %}
+    <form method="post" action="{{ url_for('studio.allocate', eid=e.id) }}" class="alloc-form">
+      {{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}">
+      <div class="alloc-modes">
+        <label class="mode-tile"><input type="radio" name="mode" value="new" checked><b>Place people without a slot</b><small>Nobody who has a slot is moved.</small></label>
+        <label class="mode-tile"><input type="radio" name="mode" value="all"><b>Re-allocate everyone</b><small>Fresh, balanced plan. People whose slot changes are told.</small></label>
+      </div>
+      <div class="row" style="gap:16px;flex-wrap:wrap">
+        <label class="check"><input type="checkbox" name="keep_locked" checked> Keep slots set by hand 🔒</label>
+        <label class="check"><input type="checkbox" name="announce" checked> Post a “your slots are out” update</label>
+      </div>
+      <div class="row">
+        <button class="btn ghost" name="action" value="preview" {{ 'disabled' if not bd.people }}>{{ icon("eye", "ico sm") }}Preview</button>
+        <button class="btn brand" name="action" value="apply" {{ 'disabled' if not bd.people }}>{{ icon("clock", "ico sm") }}Allocate &amp; notify</button>
+      </div>
+    </form>
+    {% endif %}
+    <p class="tiny muted mb-0">Each slot holds a set number of members; a team always stays together. Every event's first slot fills before the next, and
+      people in several events get slots that never clash and follow the event-day order. New participants get a slot the moment their ticket is confirmed.</p>
+  </section>
+
+  {% if lead %}
+  <details class="card gen-card" {{ 'open' if bd.slot_count <= bd.events|length and bd.events }}>
+    <summary><span class="grow"><b>⚡ Make time slots</b><small>For example 5 slots of 60 minutes, 20 members each{{ ", for every event at once" if is_fest }}</small></span>{{ icon("down", "ico sm") }}</summary>
+    <form method="post" action="{{ url_for('studio.slots_generate', eid=e.id) }}" class="gen-form">
+      {{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}">
+      {% if is_fest %}
+      <div class="field"><label>Events <button type="button" class="linkish tiny" data-check-all="gen-ev">All</button> · <button type="button" class="linkish tiny" data-check-none="gen-ev">None</button></label>
+        <div class="chip-checks" id="gen-ev">{% for ev in bd.events %}<label><input type="checkbox" name="event_ids" value="{{ ev.event.id }}" checked><span>{{ ev.event.title }}</span></label>{% endfor %}</div></div>
+      {% endif %}
+      <div class="grid-3">
+        <div class="field"><label>First slot starts</label><input type="datetime-local" name="start" value="{{ default_start }}" required></div>
+        <div class="field"><label>Minutes each</label><input type="number" name="minutes" min="5" max="1440" value="60"></div>
+        <div class="field"><label>Break between (min)</label><input type="number" name="gap" min="0" max="600" value="0"></div>
+        <div class="field"><label>How many slots</label><input type="number" name="count" min="1" max="48" value="5"></div>
+        <div class="field"><label>Members per slot</label><input type="number" name="capacity" min="1" max="100000" value="20"></div>
+        <div class="field"><label>Room <span class="hint">optional</span></label><input name="venue" maxlength="80" placeholder="Same as the event"></div>
+      </div>
+      <label class="check"><input type="checkbox" name="replace" checked> Replace the slots these events have now (their people are re-allocated)</label>
+      <button class="btn brand">{{ icon("plus", "ico sm") }}Make slots</button>
+    </form>
+  </details>
+  {% endif %}
+
+  {% for ev in bd.events %}
+  {% set loose_n = ev.loose|sum(attribute='size') %}
+  <details class="card ev-slots" {{ 'open' if bd.events|length <= 2 or loose_n }}>
+    <summary>
+      <span class="grow"><b>{{ ev.event.title }}</b><small>{{ ev.slots|length }} slot{{ 's' if ev.slots|length != 1 }} · {{ ev.people }} {{ "person" if ev.people == 1 else "people" }} · {{ ev.capacity }} places</small></span>
+      {% if loose_n %}<span class="pill amber">{{ loose_n }} need a slot</span>{% elif ev.people %}<span class="pill green">All placed</span>{% endif %}
+      {{ icon("down", "ico sm") }}
+    </summary>
+    <div class="slot-list">
+      {% for row in ev.slots %}{% set s = row.slot %}
+      <div class="slot-row">
+        <div class="slot-head">
+          <span class="slot-name">{{ row.name }}</span>
+          <span class="slot-when"><b>{{ s.start_dt|time }} – {{ s.end_dt|time }}</b><small>{{ s.start_dt|dt("%a %d %b") }}{% if s.venue %} · {{ s.venue }}{% endif %}</small></span>
+          <span class="slot-meter" title="{{ row.load }} of {{ s.capacity }}"><i class="{{ 'over' if row.load > s.capacity }}" style="width:{{ [((row.load / s.capacity) * 100) if s.capacity else 0, 100]|min }}%"></i></span>
+          <span class="slot-count"><b>{{ row.load }}</b>/{{ s.capacity }}{% if row.checked %}<small> · {{ row.checked }} in ✓</small>{% endif %}</span>
+          {% if lead %}
+          <details class="slot-edit">
+            <summary class="iconbtn" aria-label="Edit {{ row.name }}">{{ icon("edit", "ico sm") }}</summary>
+            <div class="slot-edit-pop">
+              <form method="post" action="{{ url_for('studio.slot_save', sid=s.id) }}" class="stack">
+                {{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}">
+                <div class="grid-2">
+                  <div class="field"><label>Name</label><input name="label" maxlength="40" value="{{ s.label or '' }}" placeholder="{{ row.name }}"></div>
+                  <div class="field"><label>Members</label><input type="number" name="capacity" min="1" value="{{ s.capacity }}"></div>
+                  <div class="field"><label>Starts</label><input type="datetime-local" name="start" value="{{ s.start_dt[:16] }}" required></div>
+                  <div class="field"><label>Ends</label><input type="datetime-local" name="end" value="{{ s.end_dt[:16] }}" required></div>
+                </div>
+                <div class="field"><label>Room</label><input name="venue" maxlength="80" value="{{ s.venue or '' }}" placeholder="{{ ev.event.venue }}"></div>
+                <button class="btn brand sm">Save slot</button>
+              </form>
+              {% if ev.slots|length > 1 %}
+              <form method="post" action="{{ url_for('studio.slot_delete', sid=s.id) }}" data-confirm="Remove {{ row.name }}?{% if row.load %} Its {{ row.load }} people will be moved to other slots where possible.{% endif %}">
+                {{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}"><button class="btn danger-soft sm">{{ icon("trash", "ico sm") }}Remove slot</button></form>
+              {% endif %}
+            </div>
+          </details>
+          {% endif %}
+        </div>
+        {% if row.units %}
+        <div class="slot-people">
+          {% for u in row.units %}
+          <div class="unit">
+            <span class="u-av">{{ u.label[:1] if u.size == 1 else '👥' }}</span>
+            <span class="grow"><b>{{ u.label }}</b>{% if u.locked %} <span title="Set by hand: re-allocating keeps it">🔒</span>{% endif %}
+              <small>{% if u.size > 1 %}{{ u.size }} members: {{ u.regs|map(attribute='name')|join(', ') }}{% else %}{{ u.regs[0].name if u.label != u.regs[0].name else 'Solo' }}{% endif %}</small></span>
+            {% if lead and ev.slots|length > 1 %}
+            <form method="post" action="{{ url_for('studio.slot_move', eid=e.id) }}" class="move-inline">
+              {{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}"><input type="hidden" name="rid" value="{{ u.regs[0].id }}">
+              <select name="slot_id" aria-label="Move {{ u.label }}" data-autosubmit>
+                <option value="">Move…</option>
+                {% for other in ev.slots if other.slot.id != s.id %}<option value="{{ other.slot.id }}">{{ other.name }} · {{ other.slot.start_dt|time }} ({{ other.load }}/{{ other.slot.capacity }})</option>{% endfor %}
+              </select>
+            </form>
+            {% if u.locked %}<form method="post" action="{{ url_for('studio.slot_unlock', eid=e.id) }}">{{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}"><input type="hidden" name="rid" value="{{ u.regs[0].id }}"><button class="btn ghost sm" title="Let re-allocation move them">Unlock</button></form>{% endif %}
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% else %}
+      <p class="muted small" style="padding:12px 16px;margin:0">No slots yet.</p>
+      {% endfor %}
+    </div>
+    {% if ev.loose %}
+    <div class="loose">
+      <h4>Need a slot ({{ loose_n }})</h4>
+      {% for u in ev.loose %}
+      <div class="unit">
+        <span class="u-av">{{ u.label[:1] if u.size == 1 else '👥' }}</span>
+        <span class="grow"><b>{{ u.label }}</b><small>{{ u.size }} member{{ 's' if u.size != 1 }}</small></span>
+        {% if lead and ev.slots %}
+        <form method="post" action="{{ url_for('studio.slot_move', eid=e.id) }}" class="move-inline">
+          {{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}"><input type="hidden" name="rid" value="{{ u.regs[0].id }}">
+          <select name="slot_id" aria-label="Give {{ u.label }} a slot" data-autosubmit>
+            <option value="">Give a slot…</option>
+            {% for other in ev.slots %}<option value="{{ other.slot.id }}">{{ other.name }} · {{ other.slot.start_dt|time }} ({{ other.load }}/{{ other.slot.capacity }})</option>{% endfor %}
+          </select>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if lead %}
+    <details class="add-slot">
+      <summary>{{ icon("plus", "ico sm") }}Add a slot to {{ ev.event.title }}</summary>
+      <form method="post" action="{{ url_for('studio.slot_add', eid=ev.event.id) }}" class="grid-3" style="align-items:end">
+        {{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}">
+        <div class="field"><label>Starts</label><input type="datetime-local" name="start" value="{{ (ev.slots[-1].slot.end_dt if ev.slots else ev.event.start_dt)[:16] }}" required></div>
+        <div class="field"><label>Ends</label><input type="datetime-local" name="end" required></div>
+        <div class="field"><label>Members</label><input type="number" name="capacity" min="1" value="{{ ev.slots[-1].slot.capacity if ev.slots else 20 }}"></div>
+        <div class="field"><label>Room <span class="hint">optional</span></label><input name="venue" maxlength="80" placeholder="{{ ev.event.venue }}"></div>
+        <div class="field"><label>Name <span class="hint">optional</span></label><input name="label" maxlength="40" placeholder="Slot {{ ev.slots|length + 1 }}"></div>
+        <button class="btn soft">{{ icon("plus", "ico sm") }}Add slot</button>
+      </form>
+    </details>
+    {% endif %}
+  </details>
+  {% else %}
+  {{ empty("⏱️", "No events yet", "Add events first, then give them time slots.") }}
+  {% endfor %}
+
+  {% if flow is not none %}
+  <section class="card flow-card">
+    <div class="card-head"><div><h3>Event-day order</h3>
+      <p class="small muted mb-0">Drag to set what each participant does after entry. Their task list follows this order, and a meal with a time sits where its time falls among their slots.</p></div></div>
+    <form method="post" action="{{ url_for('studio.flow_save', eid=e.id) }}" data-flow-form>
+      {{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}"><input type="hidden" name="flow" value="">
+      <ol class="flow-list" data-sortable>
+        <li class="flow-item fixed"><span class="fi-icon">🚪</span><span class="grow"><b>Entry</b><small>Always first: check in at the gate</small></span><span class="fi-pin" aria-hidden="true">📌</span></li>
+        {% for it in flow %}
+        <li class="flow-item {{ it.kind }}" data-key="{{ it.key }}" data-kind="{{ it.kind }}"{% if it.kind == 'food' %} data-title="{{ it.title }}" data-start="{{ (it.start or '')[:16] }}" data-end="{{ (it.end or '')[:16] }}" data-venue="{{ it.venue or '' }}"{% endif %}>
+          <button type="button" class="drag" aria-label="Drag to reorder" {% if not lead %}disabled{% endif %}>⋮⋮</button>
+          <span class="fi-icon">{{ '🍽️' if it.kind == 'food' else '🎯' }}</span>
+          <span class="grow"><b data-t>{{ it.title }}</b><small data-s>{% if it.kind == 'food' %}{% if it.start %}{{ it.start|time }}{% if it.end %}–{{ it.end|time }}{% endif %}{% else %}Any time, in this place in the order{% endif %}{% if it.venue %} · {{ it.venue }}{% endif %}{% else %}{{ it.start|dt("%a %d %b, %I:%M %p") }}{% endif %}</small></span>
+          {% if lead %}<span class="fi-move"><button type="button" class="iconbtn" data-up aria-label="Move up">↑</button><button type="button" class="iconbtn" data-down aria-label="Move down">↓</button></span>
+          {% if it.kind == 'food' %}<button type="button" class="iconbtn" data-remove aria-label="Remove {{ it.title }}">✕</button>{% endif %}{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+      {% if lead %}
+      <div class="add-meal">
+        <b>🍽️ Add a meal</b>
+        <div class="grid-4">
+          <input data-meal-title placeholder="Lunch" maxlength="60" aria-label="Meal name">
+          <input data-meal-start type="datetime-local" aria-label="From" title="From (optional)">
+          <input data-meal-end type="datetime-local" aria-label="Until" title="Until (optional)">
+          <input data-meal-venue placeholder="Food court (optional)" maxlength="80" aria-label="Where">
+        </div>
+        <button type="button" class="btn soft sm" data-add-meal>{{ icon("plus", "ico sm") }}Add to the order</button>
+      </div>
+      <button class="btn brand">{{ icon("check", "ico sm") }}Save order</button>
+      {% endif %}
+    </form>
+  </section>
+  {% elif e.parent_id %}
+  <p class="small muted center">The event-day order (and meals) is set on the fest's <a class="link" href="{{ url_for('studio.event', eid=e.parent_id) }}#slots">Slots &amp; flow</a> tab.</p>
+  {% endif %}
+</div>

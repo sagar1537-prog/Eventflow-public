@@ -29,12 +29,17 @@
   </div>
 
   <nav class="tabs" data-panes>
-    <a href="#events">Tracks &amp; events <span class="n">{{ kpis.events }}</span></a>
+    <a href="#events">Events <span class="n">{{ kpis.events }}</span></a>
+    <a href="#slots">Slots &amp; flow{% if bd.unplaced %} <span class="n" style="background:var(--amber,#F5A524);color:#fff">{{ bd.unplaced }}</span>{% endif %}</a>
     <a href="#payments">Payments {% if kpis.review %}<span class="n" style="background:var(--rose);color:#fff">{{ kpis.review }}</span>{% endif %}</a>
     <a href="#updates">Updates</a>
   </nav>
 
   <section class="tab-pane" id="events">
+    {% if lead and subs %}
+    <form id="bulk-remove" method="post" action="{{ url_for('studio.subs_remove', eid=e.id) }}" data-confirm="Remove the ticked events from {{ e.title }}? People registered for them are told. Events people have paid for can't be removed.">{{ csrf_field() }}</form>
+    <div class="bulk-bar" data-bulk-bar hidden><span><b data-bulk-n>0</b> selected</span><button class="btn danger sm" form="bulk-remove">{{ icon("trash", "ico sm") }}Remove selected</button><button type="button" class="btn ghost sm" data-bulk-clear>Clear</button></div>
+    {% endif %}
     <div class="stack-lg">
       {% for gr in groups %}{% set t = gr.t %}
       <section class="track-card studio-track">
@@ -45,19 +50,22 @@
         </header>
         <div class="table-wrap" style="border:0;border-radius:0">
           <table class="data">
-            <thead><tr><th>Event</th><th class="r">Fee</th><th class="r">Team</th><th class="r">Registered</th><th class="r">Checked in</th><th>Status</th><th></th></tr></thead>
+            <thead><tr>{% if lead %}<th style="width:34px"><input type="checkbox" data-check-group="t{{ t.id }}" aria-label="Select all in {{ t.name }}"></th>{% endif %}<th>Event</th><th class="r">Fee</th><th class="r">Team</th><th class="r">Registered</th><th class="r">Checked in</th><th>Status</th><th></th></tr></thead>
             <tbody>
             {% for it in gr["items"] %}{% set s = it.e %}
               <tr>
+                {% if lead %}<td><input type="checkbox" name="sub" value="{{ s.id }}" form="bulk-remove" data-group="t{{ t.id }}" aria-label="Select {{ s.title }}"></td>{% endif %}
                 <td><b>{{ s.title }}</b>{% if s.label %} <span class="pill soft">{{ s.label }}</span>{% endif %}<br><small class="muted">{{ s.start_dt|dt("%a %d %b, %I:%M %p") }} · {{ s.venue }}</small></td>
                 <td class="r">{% if t.pricing == 'pass' %}<span class="muted">pass</span>{% elif s.fee %}{{ s.fee|inr }}{% if s.fee_type == 'team' %}<small class="muted">/team</small>{% endif %}{% else %}Free{% endif %}</td>
                 <td class="r">{{ "Solo" if s.team_size == 1 else "≤ " ~ s.team_size }}</td>
                 <td class="r"><b>{{ s.reg_count }}</b><small class="muted"> / {{ s.capacity }}</small>{% if s.review_count %}<br><span class="pill amber">{{ s.review_count }} to verify</span>{% endif %}</td>
                 <td class="r">{{ s.att_count }}</td>
                 <td>{{ status_pill(s.status) }}</td>
-                <td class="nowrap"><a class="btn ghost sm" href="{{ url_for('studio.event', eid=s.id) }}">Manage</a> {% if lead %}<a class="btn ghost sm icon" href="{{ url_for('studio.event_edit', eid=s.id) }}" aria-label="Edit {{ s.title }}">{{ icon("edit", "ico sm") }}</a>{% endif %}</td>
+                <td class="nowrap"><a class="btn ghost sm" href="{{ url_for('studio.event', eid=s.id) }}">Manage</a>
+                  {% if lead %}<a class="btn ghost sm icon" href="{{ url_for('studio.event_edit', eid=s.id) }}" aria-label="Edit {{ s.title }}" title="Edit">{{ icon("edit", "ico sm") }}</a>
+                  <form method="post" action="{{ url_for('studio.sub_remove', eid=s.id) }}" style="display:inline" data-confirm="Remove {{ s.title }} from {{ e.title }}?{% if s.reg_count %} Its {{ s.reg_count }} registrations are cancelled and told.{% endif %}">{{ csrf_field() }}<button class="btn ghost sm icon danger-ico" aria-label="Remove {{ s.title }}" title="Remove">{{ icon("trash", "ico sm") }}</button></form>{% endif %}</td>
               </tr>
-            {% else %}<tr><td colspan="7" class="muted">No events in this track yet.</td></tr>{% endfor %}
+            {% else %}<tr><td colspan="8" class="muted">No events in this group yet.</td></tr>{% endfor %}
             </tbody>
           </table>
         </div>
@@ -74,9 +82,12 @@
               <div class="field"><label>Seats</label><input name="capacity" type="number" min="1" value="100"></div>
               <div class="field"><label>Category</label><select name="category">{% for c in CATS %}<option {{ 'selected' if c == (gr["items"][0].e.category if gr["items"] else 'Technical') }}>{{ c }}</option>{% endfor %}</select></div>
               <div class="field"><label>Tag <span class="hint">(optional)</span></label><input name="label" maxlength="40" placeholder="Boys only"></div>
+              <div class="field"><label>Starts</label><input name="start_dt" type="datetime-local" value="{{ e.start_dt[:16] }}"></div>
+              <div class="field"><label>Ends</label><input name="end_dt" type="datetime-local" value="{{ e.end_dt[:16] }}"></div>
+              <div class="field"><label>Venue <span class="hint">(optional)</span></label><input name="venue" maxlength="120" placeholder="{{ e.venue }}"></div>
             </div>
             <button class="btn brand">{{ icon("plus", "ico sm") }}Add event</button>
-            <p class="tiny muted mb-0">Uses the fest's dates and venue. Open it afterwards to change its time, venue or banner.</p>
+            <p class="tiny muted mb-0">It runs as one slot for now. Split it into time slots under Slots &amp; flow.</p>
           </form>
         </details>
         {% endif %}
@@ -106,18 +117,22 @@
 
       {% if lead %}
       <form class="card pad-lg" method="post" action="{{ url_for('studio.track_save', eid=e.id) }}">
-        {{ csrf_field() }}<h3>Add a track</h3>
-        <p class="muted small">A track groups events, like Technical, Non-technical or Sports, and decides how they're priced.</p>
+        {{ csrf_field() }}<h3>Add a group of events</h3>
+        <p class="muted small">A group (track) holds events like Technical, Non-technical or Sports, and decides how they're priced.</p>
         <div class="grid-3">
           <div class="field"><label>Name</label><input name="name" required maxlength="60" placeholder="Cultural events"></div>
           <div class="field"><label>Emoji</label><input name="emoji" maxlength="4" value="🎭"></div>
           <div class="field"><label>Pass fee (₹)</label><input name="pass_fee" type="number" min="0" value="0"></div>
         </div>
         <div class="field"><label>Pricing</label><div class="seg"><label><input type="radio" name="pricing" value="event" checked>Fee per event</label><label><input type="radio" name="pricing" value="pass">One pass for all events</label></div></div>
-        <button class="btn brand">{{ icon("plus", "ico sm") }}Add track</button>
+        <button class="btn brand">{{ icon("plus", "ico sm") }}Add group</button>
       </form>
       {% endif %}
     </div>
+  </section>
+
+  <section class="tab-pane" id="slots">
+    {% include "studio/_slots.html" %}
   </section>
 
   <section class="tab-pane" id="payments">

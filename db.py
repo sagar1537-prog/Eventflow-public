@@ -323,6 +323,54 @@ CREATE TABLE IF NOT EXISTS busy_times (
 );
 CREATE INDEX IF NOT EXISTS ix_busy_user ON busy_times(user_id);
 
+-- time slots an event runs in. Each slot holds a set number of members; people are allocated to one slot per event
+CREATE TABLE IF NOT EXISTS event_slots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  label TEXT,
+  start_dt TEXT NOT NULL,
+  end_dt TEXT NOT NULL,
+  venue TEXT,
+  capacity INTEGER NOT NULL DEFAULT 20,
+  position INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_slots_event ON event_slots(event_id);
+
+-- the order of the event day for an event or a fest (entry always comes first): its events and its meals
+CREATE TABLE IF NOT EXISTS flow_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scope_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('event','food')),
+  event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+  title TEXT, start_dt TEXT, end_dt TEXT, venue TEXT,
+  position INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_flow_scope ON flow_items(scope_id);
+
+-- a person's finished or skipped event-day tasks that have no column of their own (meals, organiser skips)
+CREATE TABLE IF NOT EXISTS task_marks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scope_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  task_key TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'done' CHECK (state IN ('done','skipped')),
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  UNIQUE (user_id, scope_id, task_key)
+);
+
+-- the one live notice each participant keeps during an event day (updated as slots end, removed when it's over)
+CREATE TABLE IF NOT EXISTS live_status (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scope_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  notification_id INTEGER,
+  stage TEXT NOT NULL,
+  text TEXT NOT NULL,
+  link TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (user_id, scope_id)
+);
+
 -- uploaded files, used when running on PostgreSQL (Render's disk is wiped on restart). Locally: instance/uploads
 CREATE TABLE IF NOT EXISTS media_files (
   path TEXT PRIMARY KEY,
@@ -358,6 +406,9 @@ MIGRATIONS = [
     "ALTER TABLE registrations ADD COLUMN slot_locked INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE registrations ADD COLUMN slot_in_at TEXT",
     "CREATE INDEX IF NOT EXISTS ix_pay_bundle ON payments(bundle)",
+    # time slots per event: the slot each registration is allocated to
+    "ALTER TABLE registrations ADD COLUMN slot_id INTEGER REFERENCES event_slots(id) ON DELETE SET NULL",
+    "CREATE INDEX IF NOT EXISTS ix_reg_slot ON registrations(slot_id)",
 ]
 
 
@@ -669,7 +720,7 @@ def q(sql, args=(), one=False):
 
 ID_TABLES = {"users", "friendships", "events", "schedule_items", "coupons", "registrations", "payments", "announcements",
              "faqs", "posts", "post_media", "comments", "messages", "notifications", "reports", "chat_logs",
-             "event_winners", "fest_tracks", "audit_log", "busy_times"}
+             "event_winners", "fest_tracks", "audit_log", "busy_times", "event_slots", "flow_items", "task_marks"}
 
 
 def ex(sql, args=()):
@@ -736,9 +787,9 @@ def _binary(data):
 # ====================================================================== schema
 TABLES = [  # creation order (parents first)
     "users", "password_resets", "follows", "friendships", "events", "fest_tracks", "event_staff", "schedule_items",
-    "coupons", "registrations", "payments", "announcements", "faqs", "event_saves", "posts", "post_media", "post_likes",
-    "post_saves", "comments", "messages", "notifications", "reports", "chat_logs", "event_winners", "settings", "audit_log",
-    "busy_times", "media_files",
+    "coupons", "event_slots", "registrations", "payments", "announcements", "faqs", "event_saves", "posts", "post_media",
+    "post_likes", "post_saves", "comments", "messages", "notifications", "reports", "chat_logs", "event_winners", "settings",
+    "audit_log", "busy_times", "media_files", "flow_items", "task_marks", "live_status",
 ]
 
 
@@ -785,10 +836,11 @@ def create_schema():
         state = q("""SELECT to_regclass('public.users') IS NOT NULL AS has_tables,
                             to_regclass('public.media_files') IS NOT NULL AS has_media,
                             EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
-                                    AND table_name='registrations' AND column_name='slot_in_at')
-                            AND to_regclass('public.busy_times') IS NOT NULL AS current""", one=True)
+                                    AND table_name='registrations' AND column_name='slot_id')
+                            AND to_regclass('public.live_status') IS NOT NULL
+                            AND to_regclass('public.task_marks') IS NOT NULL AS current""", one=True)
         if not (state["has_tables"] and state["current"] and state["has_media"]):   # first run, or older schema
-            print("  First start on this database: creating EventFlow's tables.", flush=True)
+            print("  Setting up EventFlow's tables on this database (first start or an upgrade).", flush=True)
             run_sql(pg_schema())
         return
     conn = get_db()

@@ -136,8 +136,10 @@ def home():
                             "venue": e["venue"], "banner": url_for("media", rel=e["banner"]) if e["banner"] else None,
                             "fee": e["fee"], "fest": e["kind"] == "fest", "url": url_for("events.detail", eid=e["id"]),
                             "color": core.CATEGORIES.get(e["category"], "#7A8399")})
-    next_ticket = q("""SELECT r.*, e.title, e.start_dt, e.venue FROM registrations r JOIN events e ON e.id=r.event_id
-                       WHERE r.user_id=? AND r.status='confirmed' AND e.end_dt >= ? ORDER BY e.start_dt LIMIT 1""",
+    next_ticket = q("""SELECT r.*, e.title, e.start_dt, e.venue, f.title fest_title FROM registrations r JOIN events e ON e.id=r.event_id
+                       LEFT JOIN events f ON f.id=e.parent_id
+                       WHERE r.user_id=? AND r.status='confirmed' AND e.end_dt >= ? AND e.is_removed=0
+                       ORDER BY COALESCE(r.slot_start, e.start_dt) LIMIT 1""",
                     (me["id"], core.now_iso()), one=True)
     return render_template("social/home.html", posts=posts, has_more=has_more, page=page, suggested=suggested,
                            stories=stories, stories_json=json.dumps(stories), next_ticket=next_ticket,
@@ -514,10 +516,12 @@ def notifications():
     ex("UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0", (g.user["id"],))
     today = datetime.now().strftime("%Y-%m-%d")
     week = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    live = [n for n in rows if n["kind"] == "live"]
+    rows = [n for n in rows if n["kind"] != "live"]
     groups = [("Today", [n for n in rows if n["created_at"][:10] == today]),
               ("This week", [n for n in rows if week <= n["created_at"][:10] < today]),
               ("Earlier", [n for n in rows if n["created_at"][:10] < week])]
-    return render_template("social/notifications.html", groups=groups, requests=requests_)
+    return render_template("social/notifications.html", groups=groups, requests=requests_, live=live)
 
 
 # ================================================================== messages

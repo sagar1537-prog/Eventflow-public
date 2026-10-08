@@ -11,6 +11,7 @@ import io
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, Response
 
 import core
+import scheduler
 from db import q, ex, scalar, in_clause
 from blueprints.studio import need
 
@@ -48,8 +49,8 @@ TABLES = {
         "fields": [("pass_code", "Ticket code", "ro", None), ("status", "Status", "choice", CHOICES["status_reg"]),
                    ("team_name", "Team", "text", 60), ("food_pref", "Food", "choice", CHOICES["food"]),
                    ("amount", "Amount (₹)", "int", (0, 1000000)), ("coupon_code", "Coupon", "text", 30),
-                   ("slot_start", "Slot starts", "dt", False), ("slot_end", "Slot ends", "dt", False),
-                   ("slot_venue", "Slot room", "text", 80), ("slot_locked", "Slot locked (planner keeps it)", "bool", None),
+                   ("slot_start", "Slot starts (change it under Slots)", "ro", None), ("slot_end", "Slot ends", "ro", None),
+                   ("slot_venue", "Slot room", "ro", None), ("slot_locked", "Slot locked (re-allocating keeps it)", "bool", None),
                    ("attended", "Entered (checked in)", "bool", None), ("checkin_time", "Entry time", "dt", False),
                    ("slot_in_at", "Slot check-in time", "dt", False), ("completed_at", "Completed at (certificate)", "dt", False),
                    ("food_at", "Meal served at", "dt", False), ("created_at", "Registered at", "ro", None)]},
@@ -86,6 +87,12 @@ TABLES = {
         "list": ["_user", "title", "position", "points"],
         "fields": [("position", "Position (1-3, 0 = special)", "int", (0, 3)), ("title", "Award", "text", 60),
                    ("team_name", "Team", "text", 60), ("points", "Points", "int", (0, 10000))]},
+    "event_slots": {
+        "label": "Time slots", "icon": "⏱️", "scope": "event_id", "add": True, "delete": True,
+        "list": ["label", "start_dt", "end_dt", "capacity", "venue"],
+        "fields": [("label", "Name (optional)", "text", 40), ("start_dt", "Starts", "dt", True), ("end_dt", "Ends", "dt", True),
+                   ("venue", "Room (optional)", "text", 80), ("capacity", "Members per slot", "int", (1, 100000)),
+                   ("position", "Order", "int", (0, 10000))]},
     "busy_times": {
         "label": "Busy times", "icon": "⏰", "scope": "event_id", "add": False, "delete": True, "user": True,
         "list": ["_user", "start_dt", "end_dt", "note"],
@@ -206,6 +213,9 @@ def update(eid, table, rid):
     except Exception as err:                    # unique codes, foreign keys and the like
         flash(f"Couldn't save: {str(err).splitlines()[0][:160]}", "error")
         return redirect(url_for("data.index", eid=eid, table=table) + f"#row-{rid}")
+    if table == "event_slots":                  # people in the slot get its new times
+        ex("""UPDATE registrations SET slot_start=?, slot_end=?, slot_venue=COALESCE(?, (SELECT venue FROM events WHERE id=registrations.event_id))
+              WHERE slot_id=?""", (values["start_dt"], values["end_dt"], values["venue"], rid))
     core.audit("data.update", f"{table}#{rid}: " + ", ".join(f"{k}={v}" for k, v in values.items())[:400])
     flash(f"Saved {TABLES[table]['label'].lower()} row #{rid}.", "success")
     return redirect(url_for("data.index", eid=eid, table=table) + f"#row-{rid}")
@@ -217,8 +227,14 @@ def delete(eid, table, rid):
     spec = _spec(table)
     if not spec["delete"]:
         abort(403)
-    _row(table, rid, scope(eid))
-    ex(f"DELETE FROM {table} WHERE id=?", (rid,))
+    row = _row(table, rid, scope(eid))
+    if table == "event_slots":
+        if (scalar("SELECT COUNT(*) FROM event_slots WHERE event_id=?", (row["event_id"],)) or 0) <= 1:
+            flash("An event needs at least one time slot. Edit this one instead.", "error")
+            return redirect(url_for("data.index", eid=eid, table=table))
+        scheduler.delete_slot(row)
+    else:
+        ex(f"DELETE FROM {table} WHERE id=?", (rid,))
     core.audit("data.delete", f"{table}#{rid}")
     flash(f"Deleted row #{rid}.", "success")
     return redirect(url_for("data.index", eid=eid, table=table))
@@ -250,6 +266,9 @@ def add(eid, table):
                                                 (request.form.get("team_name") or "").strip()[:60] or None, food, status))
         core.notify(user["id"], "event", f"The organisers added you to {scalar('SELECT title FROM events WHERE id=?', (target,))}.",
                     url_for("events.tickets"))
+        if status == "confirmed":
+            ev = q("SELECT id, parent_id FROM events WHERE id=?", (target,), one=True)
+            scheduler.place_new(ev["parent_id"] or ev["id"])
     else:
         values, errors = _clean(table, request.form)
         if errors:

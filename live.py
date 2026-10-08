@@ -145,6 +145,12 @@ def _drop(row):
     ex("DELETE FROM live_status WHERE user_id=? AND scope_id=?", (row["user_id"], row["scope_id"]))
 
 
+def finish_scope(scope):
+    """An event (or fest) was marked completed: its events inside follow, and the live notices go."""
+    ex("UPDATE events SET status='completed' WHERE parent_id=? AND status IN ('open','closed')", (scope,))
+    clear_scope(scope)
+
+
 def clear_scope(scope):
     """The event day was completed: remove everyone's live notice for it."""
     for row in q("SELECT * FROM live_status WHERE scope_id=?", (scope,)):

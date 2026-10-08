@@ -213,6 +213,9 @@ def update(eid, table, rid):
     except Exception as err:                    # unique codes, foreign keys and the like
         flash(f"Couldn't save: {str(err).splitlines()[0][:160]}", "error")
         return redirect(url_for("data.index", eid=eid, table=table) + f"#row-{rid}")
+    if table == "events" and values.get("status") == "completed":
+        import live
+        live.finish_scope(rid)
     if table == "event_slots":                  # people in the slot get its new times
         ex("""UPDATE registrations SET slot_start=?, slot_end=?, slot_venue=COALESCE(?, (SELECT venue FROM events WHERE id=registrations.event_id))
               WHERE slot_id=?""", (values["start_dt"], values["end_dt"], values["venue"], rid))

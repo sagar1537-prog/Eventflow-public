@@ -187,6 +187,8 @@ def generate(event_ids, start, minutes, gap, count, capacity, venue=None, replac
 def backfill():
     """Run at start-up: events from before time slots existed get their slot(s), and their people are put in them.
     Slots an older version of EventFlow gave people (time + room) become real slots. Safe to run again."""
+    ex("""UPDATE events SET status='completed' WHERE status IN ('open','closed')
+          AND parent_id IN (SELECT id FROM events WHERE status='completed')""")
     events = q("SELECT * FROM events WHERE kind!='fest' AND is_removed=0 AND id NOT IN (SELECT event_id FROM event_slots)")
     for e in events:
         legacy = q("""SELECT slot_start, slot_end, slot_venue, COUNT(*) n FROM registrations WHERE event_id=? AND slot_id IS NULL

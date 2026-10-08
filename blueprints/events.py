@@ -295,7 +295,10 @@ def join(eid):
         flash("Only student accounts can register for events.", "info")
         return redirect(back)
     if f["status"] != "open":
-        flash("Registration for this fest isn't open.", "error")
+        flash("This fest has finished." if f["status"] == "completed" else "Registration for this fest isn't open.", "error")
+        return redirect(back)
+    if core.parse_dt(f["end_dt"]) and core.parse_dt(f["end_dt"]) < core.now():
+        flash("This fest has finished.", "error")
         return redirect(back)
     ids = []
     for v in request.form.getlist("pick"):
@@ -597,7 +600,7 @@ def tickets():
     tabs = {
         "upcoming": [r for r in rows if r["status"] == "confirmed" and not finished(r)],
         "pending": [r for r in rows if r["status"] in ("pending_payment", "payment_review")],
-        "waitlist": [r for r in rows if r["status"] == "waitlisted"],
+        "waitlist": [r for r in rows if r["status"] == "waitlisted" and not finished(r)],
         "past": [r for r in rows if r["status"] == "confirmed" and finished(r)],
     }
     groups = {k: _ticket_cards(v) for k, v in tabs.items()}

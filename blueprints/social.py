@@ -138,9 +138,11 @@ def home():
                             "color": core.CATEGORIES.get(e["category"], "#7A8399")})
     next_ticket = q("""SELECT r.*, e.title, e.start_dt, e.venue, f.title fest_title FROM registrations r JOIN events e ON e.id=r.event_id
                        LEFT JOIN events f ON f.id=e.parent_id
-                       WHERE r.user_id=? AND r.status='confirmed' AND e.end_dt >= ? AND e.is_removed=0
+                       WHERE r.user_id=? AND r.status='confirmed' AND e.is_removed=0 AND COALESCE(f.is_removed, 0)=0
+                       AND e.status IN ('open','closed') AND COALESCE(f.status, 'open') IN ('open','closed')
+                       AND COALESCE(r.slot_end, e.end_dt) >= ? AND COALESCE(f.end_dt, e.end_dt) >= ?
                        ORDER BY COALESCE(r.slot_start, e.start_dt) LIMIT 1""",
-                    (me["id"], core.now_iso()), one=True)
+                    (me["id"], core.now_iso(), core.now_iso()), one=True)
     return render_template("social/home.html", posts=posts, has_more=has_more, page=page, suggested=suggested,
                            stories=stories, stories_json=json.dumps(stories), next_ticket=next_ticket,
                            college_suggestions=suggest_colleges(me, 4), people_suggestions=suggest_people(me, 4),
@@ -209,7 +211,7 @@ def explore():
     order = {"soon": "e.start_dt", "popular": "taken DESC, e.views DESC", "new": "e.created_at DESC",
              "price": "e.fee, e.start_dt"}.get(sort, "e.start_dt")
     events = event_cards(" ".join(where), args, limit=60, order=order) if tab == "events" else []
-    featured = event_cards("AND e.is_featured=1 AND e.end_dt >= ?", (core.now_iso(),), limit=6) if tab == "events" and not qtext else []
+    featured = event_cards("AND e.is_featured=1 AND e.status IN ('open','closed') AND e.end_dt >= ?", (core.now_iso(),), limit=6) if tab == "events" and not qtext else []
 
     colleges = people = posts = []
     if tab == "colleges":

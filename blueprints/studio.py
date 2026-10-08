@@ -464,7 +464,7 @@ def event_edit(eid):
         if event["parent_id"]:
             festlib.sync(event["parent_id"])
         if data["status"] == "completed" and event["status"] != "completed" and not event["parent_id"]:
-            live.clear_scope(eid)
+            live.finish_scope(eid)
         if event["status"] != "open" and data["status"] == "open":
             fol = [r[0] for r in q("SELECT follower_id FROM follows WHERE college_id=?", (event["college_id"],))]
             core.notify_many(fol, "event", f"Registrations are open for {data['title']}.", url_for("events.detail", eid=eid))

@@ -91,7 +91,7 @@ def save_post(pid):
     if scalar("SELECT 1 FROM post_saves WHERE post_id=? AND user_id=?", (pid, g.user["id"])):
         ex("DELETE FROM post_saves WHERE post_id=? AND user_id=?", (pid, g.user["id"]))
         return jsonify(saved=False)
-    if not scalar("SELECT 1 FROM posts WHERE id=?", (pid,)):
+    if not scalar("SELECT 1 FROM posts WHERE id=? AND is_removed=0", (pid,)):
         return jsonify(error="Post not found."), 404
     ex("INSERT INTO post_saves (post_id, user_id) VALUES (?,?)", (pid, g.user["id"]))
     return jsonify(saved=True)
@@ -223,8 +223,9 @@ def search():
                     "verified": u["verification"] == "verified"})
     for e in q("""SELECT e.id, e.title, e.start_dt, e.category, e.kind, u.name college,
                          (SELECT title FROM events f WHERE f.id=e.parent_id) fest FROM events e JOIN users u ON u.id=e.college_id
-                  WHERE e.status!='draft' AND e.is_removed=0 AND (e.title LIKE ? OR e.tagline LIKE ? OR e.category LIKE ?)
-                  ORDER BY e.end_dt >= datetime('now','localtime') DESC, e.start_dt LIMIT 6""", (like, like, like)):
+                  WHERE e.status IN ('open','closed') AND e.is_removed=0 AND (e.title LIKE ? OR e.tagline LIKE ? OR e.category LIKE ?)
+                  AND e.end_dt >= ? AND (e.parent_id IS NULL OR e.parent_id IN (SELECT id FROM events WHERE status IN ('open','closed') AND is_removed=0))
+                  ORDER BY e.start_dt LIMIT 6""", (like, like, like, core.now_iso())):
         out.append({"type": "event", "title": e["title"],
                     "sub": f"{e['fest'] or e['college']} · {core.parse_dt(e['start_dt']).strftime('%d %b')}",
                     "url": url_for("events.detail", eid=e["id"]), "emoji": core.CATEGORY_EMOJI.get(e["category"], "✨")})

@@ -382,6 +382,9 @@ def reg_state(event, taken=None):
         return False, "This event was removed."
     if event["status"] == "completed":
         return False, "This event has finished."
+    end = parse_dt(event["end_dt"])
+    if end and end < now():
+        return False, "This event has finished."
     if event["status"] != "open":
         return False, "Registration isn't open."
     deadline = parse_dt(event["reg_deadline"])

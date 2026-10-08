@@ -94,6 +94,22 @@
   </section>
   {% endif %}
 
+  {% if g.user.id == reg.user_id and reg.status == 'confirmed' and reg.event_status != 'completed' %}
+  <section class="card" id="busy" style="margin-top:22px">
+    <div class="card-head"><h3>⏰ Times you can't make it</h3>{% if busy %}<span class="pill">{{ busy|length }}</span>{% endif %}</div>
+    <p class="small muted" style="margin-top:-4px">Got a class, an exam or another event? Add it here and the organisers' slot planner won't give you a slot then.{% if reg.slot_start %} Your slot is already set; ask the organisers if it clashes.{% endif %}</p>
+    {% for b in busy %}<div class="busy-row"><span class="grow"><b>{{ b.start_dt|dt("%a %d %b, %I:%M %p") }} – {{ b.end_dt|time }}</b>{% if b.note %}<small class="muted"> · {{ b.note }}</small>{% endif %}</span>
+      <form method="post" action="{{ url_for('events.busy_delete', code=reg.pass_code, bid=b.id) }}">{{ csrf_field() }}<button class="btn ghost sm" aria-label="Remove">Remove</button></form></div>{% endfor %}
+    <form method="post" action="{{ url_for('events.busy_add', code=reg.pass_code) }}" class="busy-form">
+      {{ csrf_field() }}
+      <input type="datetime-local" name="start" required aria-label="Busy from" value="{{ reg.start_dt[:16] }}">
+      <input type="datetime-local" name="end" required aria-label="Busy until">
+      <input name="note" maxlength="80" placeholder="Why? (optional)" aria-label="Note">
+      <button class="btn soft sm">Add busy time</button>
+    </form>
+  </section>
+  {% endif %}
+
   {% if news %}
   <section class="card" style="margin-top:22px">
     <div class="card-head"><h3>Latest updates</h3><a class="link small" href="{{ url_for('events.detail', eid=reg.event_id) }}#updates">All updates</a></div>

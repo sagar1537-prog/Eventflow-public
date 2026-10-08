@@ -230,7 +230,8 @@ def create_app():
     from blueprints.studio import bp as studio_bp
     from blueprints.dev import bp as dev_bp
     from blueprints.api import bp as api_bp
-    for bp in (auth_bp, social_bp, events_bp, studio_bp, dev_bp, api_bp):
+    from blueprints.data import bp as data_bp
+    for bp in (auth_bp, social_bp, events_bp, studio_bp, dev_bp, api_bp, data_bp):
         app.register_blueprint(bp)
     return app
 

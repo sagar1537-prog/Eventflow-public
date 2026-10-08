@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon, empty with context %}
+{% block title %}Data · {{ e.title }}{% endblock %}
+{% macro show(v, kind) -%}
+  {%- if v is none or v == '' -%}<span class="muted">—</span>
+  {%- elif kind == 'bool' -%}{{ "✓" if v else "—" }}
+  {%- elif kind == 'dt' -%}{{ v|dt("%d %b, %I:%M %p") }}
+  {%- else -%}{{ v|string|truncate(60) }}{%- endif -%}
+{%- endmacro %}
+{% macro field(col, label, kind, opt, value) %}
+  <div class="field {{ 'wide' if kind == 'area' }}">
+    {% if kind == 'bool' %}<label class="check"><input type="checkbox" name="{{ col }}" {{ 'checked' if value }}> {{ label }}</label>
+    {% else %}<label>{{ label }}</label>
+      {% if kind == 'ro' %}<input value="{{ value or '' }}" disabled>
+      {% elif kind == 'area' %}<textarea name="{{ col }}" maxlength="{{ opt }}">{{ value or '' }}</textarea>
+      {% elif kind == 'choice' %}<select name="{{ col }}">{% for o in opt %}<option value="{{ o }}" {{ 'selected' if (value|string) == (o|string) }}>{{ o }}</option>{% endfor %}</select>
+      {% elif kind == 'dt' %}<input type="datetime-local" name="{{ col }}" value="{{ (value or '')[:16] }}" {{ 'required' if opt }}>
+      {% elif kind == 'int' %}<input type="number" name="{{ col }}" value="{{ value if value is not none else '' }}" min="{{ opt[0] }}" max="{{ opt[1] }}">
+      {% elif kind == 'float' %}<input type="number" step="any" name="{{ col }}" value="{{ value if value is not none else '' }}" min="{{ opt[0] }}" max="{{ opt[1] }}">
+      {% else %}<input name="{{ col }}" value="{{ value or '' }}" maxlength="{{ opt }}">{% endif %}
+    {% endif %}
+  </div>
+{% endmacro %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row">
+    <div><h1>Event data</h1><p>{{ e.title }} · full control over everything that belongs to this {{ "fest" if e.kind == 'fest' else "event" }}. Only your own event's rows can be seen or changed here, and every change is logged.</p></div>
+    <div class="row"><a class="btn ghost" href="{{ url_for('data.export', eid=e.id, table=table) }}">{{ icon("download", "ico sm") }}Export CSV</a>
+      <a class="btn ghost" href="{{ url_for('studio.event', eid=e.id) }}">Back to event</a></div>
+  </div>
+  <nav class="tabs data-tabs">
+    {% for t, s in tables.items() %}<a class="{{ 'on' if t == table }}" href="{{ url_for('data.index', eid=e.id, table=t) }}">{{ s.icon }} {{ s.label }} <span class="n">{{ counts[t] }}</span></a>{% endfor %}
+  </nav>
+  <div class="notice-banner subtle">Direct edits apply instantly and skip the automatic emails, refunds and waitlist moves the normal buttons do. Use them to fix mistakes.</div>
+
+  {% if spec.add %}
+  <details class="card pad-lg add-row" {{ 'open' if not rows }}>
+    <summary><b>{{ icon("plus", "ico sm") }} Add {{ "a participant" if table == 'registrations' else "a row" }}</b></summary>
+    <form method="post" action="{{ url_for('data.add', eid=e.id, table=table) }}" class="data-form">
+      {{ csrf_field() }}
+      {% if events|length > 1 %}<div class="field"><label>Event</label><select name="event_id">{% for ev in events %}<option value="{{ ev.id }}">{{ ev.title }}</option>{% endfor %}</select></div>
+      {% else %}<input type="hidden" name="event_id" value="{{ e.id }}">{% endif %}
+      {% if table == 'registrations' %}
+        <div class="field"><label>Student username</label><input name="username" placeholder="@ananya" required></div>
+        <div class="field"><label>Status</label><select name="status">{% for o in ["confirmed", "pending_payment", "waitlisted"] %}<option>{{ o }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Team</label><input name="team_name" maxlength="60"></div>
+        <div class="field"><label>Food</label><select name="food_pref"><option>veg</option><option>nonveg</option><option>none</option></select></div>
+      {% else %}
+        {% for col, label, kind, opt in spec.fields if kind != 'ro' %}{{ field(col, label, kind, opt, '') }}{% endfor %}
+      {% endif %}
+      <div class="row"><button class="btn brand">Add</button></div>
+    </form>
+  </details>
+  {% endif %}
+
+  <div class="field" style="margin:14px 0"><input type="search" placeholder="Search {{ spec.label|lower }}…" data-filter=".drow" aria-label="Search"></div>
+
+  {% if rows %}
+  <div class="drows">
+    {% for r in rows %}
+    <details class="drow card" id="row-{{ r.id }}" data-q="{{ (r|list|join(' '))|lower }}">
+      <summary>
+        <span class="did">#{{ r.id }}</span>
+        {% if events|length > 1 and table != 'events' %}<span class="pill">{{ r._event }}</span>{% endif %}
+        {% for col in spec.list %}
+          {% if col == '_user' %}<span class="dcell"><small>Person</small><b>{{ r._user or '—' }}</b>{% if r._username %}<small class="uname">@{{ r._username }}</small>{% endif %}</span>
+          {% else %}{% set f = spec.fields|selectattr(0, 'equalto', col)|first %}
+            <span class="dcell"><small>{{ f[1] if f else col }}</small><b>{{ show(r[col], f[2] if f else 'text') }}</b></span>{% endif %}
+        {% endfor %}
+        <span class="dedit">Edit {{ icon("right", "ico sm") }}</span>
+      </summary>
+      <form method="post" action="{{ url_for('data.update', eid=e.id, table=table, rid=r.id) }}" class="data-form">
+        {{ csrf_field() }}
+        {% for col, label, kind, opt in spec.fields %}{{ field(col, label, kind, opt, r[col]) }}{% endfor %}
+        <div class="row between wide">
+          <button class="btn brand">Save row #{{ r.id }}</button>
+        </div>
+      </form>
+      {% if spec.delete %}<form method="post" action="{{ url_for('data.delete', eid=e.id, table=table, rid=r.id) }}" data-confirm="Delete row #{{ r.id }} for good?{% if table == 'registrations' %} Their payments go too.{% endif %}" class="ddel">
+        {{ csrf_field() }}<button class="btn danger sm">{{ icon("trash", "ico sm") }}Delete</button></form>{% endif %}
+    </details>
+    {% endfor %}
+  </div>
+  {% else %}{{ empty(spec.icon, "Nothing here yet", "Rows for " ~ spec.label|lower ~ " appear here.") }}{% endif %}
+</div>
+{% endblock %}

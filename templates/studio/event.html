@@ -12,7 +12,8 @@
         <p class="row" style="gap:8px">{{ status_pill(e.status) }}<span>{{ e.start_dt|dt }} · {{ e.venue }}</span>{% if role == 'lead' %}<span class="pill blue">You're an event lead</span>{% endif %}</p></div>
     </div>
     <div class="row">
-      <a class="btn brand" href="{{ url_for('studio.checkin', eid=e.id) }}">{{ icon("scan", "ico sm") }}Check-in scanner</a>
+      <a class="btn brand" href="{{ url_for('studio.checkin', eid=e.id) }}">{{ icon("scan", "ico sm") }}Scan QR</a>
+      {% if lead %}<a class="btn ghost" href="{{ url_for('data.index', eid=e.id) }}">{{ icon("settings", "ico sm") }}Data</a>{% endif %}
       {% if stats.attended > stats.completed %}<form method="post" action="{{ url_for('studio.complete_all', eid=e.id) }}" data-confirm="Mark all {{ stats.attended - stats.completed }} checked-in participants as completed? This unlocks their certificates.">{{ csrf_field() }}<button class="btn ghost">{{ icon("award", "ico sm") }}Complete for all checked in</button></form>{% endif %}
       <a class="btn ghost" href="{{ url_for('events.detail', eid=e.id) }}">{{ icon("eye", "ico sm") }}View page</a>
       {% if lead %}<a class="btn ghost" href="{{ url_for('studio.event_edit', eid=e.id) }}">{{ icon("edit", "ico sm") }}Edit</a>
@@ -115,29 +116,68 @@
 
   <!-- slots -->
   <section class="tab-pane" id="slots">
-    <div class="cols-2">
-      <form class="card pad-lg" method="post" action="{{ url_for('studio.slots', eid=e.id) }}">
-        {{ csrf_field() }}
-        <h3>Give everyone a personal time and room</h3>
-        <p class="muted-2 small">Participants are spread across the rooms you list. Teams stay together. Each person is notified with their own slot.</p>
-        <div class="grid-3">
-          <div class="field"><label for="slot_start">First slot</label><input id="slot_start" name="slot_start" type="datetime-local" value="{{ default_start }}" required></div>
-          <div class="field"><label for="duration">Minutes each</label><input id="duration" name="duration" type="number" min="1" value="10"></div>
-          <div class="field"><label for="gap">Gap (min)</label><input id="gap" name="gap" type="number" min="0" value="5"></div>
+    <form class="card pad-lg" method="post" action="{{ url_for('studio.slots', eid=e.id) }}">
+      {{ csrf_field() }}
+      <div class="row between" style="align-items:flex-start"><div><h3>Smart slot planner</h3>
+        <p class="muted-2 small" style="max-width:640px">Gives every participant a personal time and room. Teams stay together. Nobody gets a slot that clashes with
+          their other events' slots or the busy times they marked on their ticket{% if busy_count %} (<b>{{ busy_count }}</b> people marked busy times){% endif %}. The people hardest to fit are placed first,
+          breaks are skipped, and slots you changed by hand (🔒) stay as they are.</p></div>
+        <span class="pill blue">{{ stats.registered }} confirmed</span></div>
+      <div class="grid-3">
+        <div class="field"><label for="slot_start">First slot</label><input id="slot_start" name="slot_start" type="datetime-local" value="{{ default_start }}" required></div>
+        <div class="field"><label for="slot_finish">Finish by <span class="hint">optional</span></label><input id="slot_finish" name="slot_finish" type="datetime-local" value="{{ default_finish }}"></div>
+        <div class="field"><label for="rooms">Rooms <span class="hint">comma separated, one team per room at a time</span></label><input id="rooms" name="rooms" value="{{ sessions|map(attribute='room')|unique|join(', ') if sessions else e.venue }}"></div>
+        <div class="field"><label for="duration">Minutes each</label><input id="duration" name="duration" type="number" min="1" max="600" value="10"></div>
+        <div class="field"><label for="gap">Gap between slots (min)</label><input id="gap" name="gap" type="number" min="0" max="240" value="5"></div>
+        <div class="field"><label for="buffer">Walking buffer around other commitments (min)</label><input id="buffer" name="buffer" type="number" min="0" max="240" value="10"></div>
+      </div>
+      <div class="field"><label for="breaks">Breaks <span class="hint">no slots during these, e.g. 13:00-14:00, 16:00-16:15</span></label><input id="breaks" name="breaks" placeholder="13:00-14:00"></div>
+      <div class="row" style="gap:18px;flex-wrap:wrap">
+        <label class="check"><input type="checkbox" name="keep_locked" checked> Keep slots I changed by hand</label>
+        <label class="check"><input type="checkbox" name="announce" checked> Post a pinned "your slots are out" update</label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ghost" name="action" value="preview" {{ 'disabled' if not stats.registered or not lead }}>{{ icon("eye", "ico sm") }}Preview plan</button>
+        <button class="btn brand" name="action" value="apply" {{ 'disabled' if not stats.registered or not lead }}>{{ icon("clock", "ico sm") }}Allocate slots &amp; notify</button>
+      </div>
+    </form>
+
+    <section class="card pad-lg" style="margin-top:18px">
+      <div class="card-head"><h3>Slot sessions</h3>{% if sessions %}<a class="btn soft sm" href="{{ url_for('studio.scan_station', eid=e.id, station='slot') }}">{{ icon("scan", "ico sm") }}Slot scanner</a>{% endif %}</div>
+      {% if sessions %}
+      <div class="sessions">
+        {% for sx in sessions %}
+        <div class="session">
+          <div class="s-when"><b>{{ sx.start|time }}</b><small>{{ sx.start|dt("%a %d %b") }} · till {{ sx.end|time }}</small><span class="pill">{{ sx.room }}</span></div>
+          <div class="s-who">
+            {% for unit in sx.members|groupby('team_name') %}
+              {% set first = unit.list[0] %}
+              <div class="s-unit">
+                <span class="grow"><b>{{ ("Team " ~ unit.grouper) if unit.grouper else first.name }}</b>{% if first.slot_locked %} <span title="Changed by hand: re-planning keeps it">🔒</span>{% endif %}
+                  <small>{% for m in unit.list %}{{ m.name }}{{ " ✓" if m.slot_in_at }}{% if not loop.last %}, {% endif %}{% endfor %}</small></span>
+                {% if lead %}
+                <details class="move"><summary class="btn ghost sm">Change slot</summary>
+                  <form method="post" action="{{ url_for('studio.slot_move', eid=e.id) }}" class="move-form">
+                    {{ csrf_field() }}<input type="hidden" name="rid" value="{{ first.id }}">
+                    <label class="small muted">Move {{ "the whole team" if unit.grouper else "them" }} to</label>
+                    <select name="target" data-move-target>
+                      {% for other in sessions if other.key != sx.key %}<option value="{{ other.key }}">{{ other.start|time }} · {{ other.room }} ({{ other.members|length }} booked)</option>{% endfor %}
+                      <option value="custom">A new time / room…</option>
+                    </select>
+                    <div class="row nw move-custom" hidden><input type="datetime-local" name="new_start" value="{{ (sx.start or '')[:16] }}" aria-label="New time"><input name="new_room" placeholder="Room" value="{{ sx.room }}" aria-label="New room"></div>
+                    <button class="btn brand sm">Move &amp; notify</button>
+                  </form>
+                  {% if first.slot_locked %}<form method="post" action="{{ url_for('studio.slot_unlock', eid=e.id) }}">{{ csrf_field() }}<input type="hidden" name="rid" value="{{ first.id }}"><button class="btn ghost sm">Unlock</button></form>{% endif %}
+                </details>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
         </div>
-        <div class="field"><label for="rooms">Rooms <span class="hint">comma separated</span></label><input id="rooms" name="rooms" value="{{ rooms|map(attribute='slot_venue')|join(', ') if rooms else e.venue }}"></div>
-        <label class="check"><input type="checkbox" name="announce" checked> Post a pinned slot announcement too</label>
-        <p class="small muted" id="slot-preview"></p>
-        <button class="btn brand" {{ 'disabled' if not stats.registered or not lead }}>Assign slots and notify</button>
-      </form>
-      <section class="card pad-lg">
-        <h3>Rooms in use</h3>
-        {% if rooms %}
-        <table class="data"><thead><tr><th>Room</th><th class="r">People</th><th>From</th><th>To</th></tr></thead>
-          <tbody>{% for r in rooms %}<tr><td><b>{{ r.slot_venue }}</b></td><td class="r">{{ r.c }}</td><td>{{ r.first|time }}</td><td>{{ r.last|time }}</td></tr>{% endfor %}</tbody></table>
-        {% else %}<p class="muted">No slots yet.</p>{% endif %}
-      </section>
-    </div>
+        {% endfor %}
+      </div>
+      {% else %}<p class="muted mb-0">No slots yet. Use the planner above: preview first, then allocate.</p>{% endif %}
+    </section>
   </section>
 
   <!-- schedule -->
@@ -337,15 +377,12 @@
     const v = ev.target.value.trim().toLowerCase();
     document.querySelectorAll("#reg-table tbody tr").forEach((tr) => { tr.hidden = v && !tr.dataset.q.includes(v); });
   });
-  const n = {{ stats.registered }};
-  const slotPreview = () => {
-    const rooms = ($("rooms").value.split(",").filter((x) => x.trim()).length) || 1, dur = +$("duration").value || 10, gap = +$("gap").value || 0;
-    const start = new Date($("slot_start").value), rounds = Math.ceil(n / rooms);
-    const end = new Date(start.getTime() + ((rounds - 1) * (dur + gap) + dur) * 60000);
-    $("slot-preview").textContent = n ? `${n} people across ${rooms} room${rooms > 1 ? "s" : ""}: ${rounds} rounds, done by about ${isNaN(end) ? "—" : end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.` : "No confirmed participants yet.";
-  };
-  ["rooms", "duration", "gap", "slot_start"].forEach((id) => $(id)?.addEventListener("input", slotPreview));
-  if ($("slot-preview")) slotPreview();
+  // change-slot exception: show the custom time/room fields when "A new time / room…" is chosen
+  document.querySelectorAll("[data-move-target]").forEach((sel) => {
+    const custom = sel.closest("form").querySelector(".move-custom");
+    const sync = () => { custom.hidden = sel.value !== "custom"; };
+    sel.addEventListener("change", sync); sync();
+  });
 
   const F = {{ {"reg": stats.registered, "nofood": stats.nofood, "veg": stats.veg, "nonveg": stats.nonveg, "att": stats.attended, "done": e.status == 'completed'}|tojson }};
   const inr = (v) => "₹" + Math.round(v).toLocaleString("en-IN");

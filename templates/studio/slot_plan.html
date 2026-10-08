@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon with context %}
+{% block title %}Slot plan · {{ e.title }}{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Slot plan preview</h1><p>{{ e.title }} · nothing is saved yet. Check it, then allocate.</p></div>
+    <a class="btn ghost" href="{{ url_for('studio.event', eid=e.id) }}#slots">Back to edit</a></div>
+
+  <div class="kpis">
+    <div class="kpi"><span>Placed</span><b>{{ r.people }}</b><small>{{ r.placed|length }} slots · teams kept together</small></div>
+    <div class="kpi"><span>Rooms</span><b>{{ r.rooms|length }}</b><small>{{ r.rooms|join(", ") }}</small></div>
+    <div class="kpi"><span>Runs</span><b>{{ r.first|time if r.first else "—" }}</b><small>to {{ r.last|time if r.last else "—" }} · {{ r.duration }} min each</small></div>
+    <div class="kpi {{ 'hl' if r.clash_free_moves }}"><span>Clashes avoided</span><b>{{ r.clash_free_moves }}</b><small>moved around other commitments</small></div>
+    <div class="kpi {{ 'hl' if r.unplaced }}"><span>Couldn't place</span><b>{{ r.unplaced|length }}</b><small>{{ "see below" if r.unplaced else "everyone has a slot" }}</small></div>
+  </div>
+
+  {% if r.unplaced %}
+  <section class="card pad-lg" style="margin-top:16px;border-color:var(--rose)">
+    <h3>Not placed</h3>
+    <p class="small muted">Add a room, move the finish time later, shorten the gap, or give them a slot by hand after allocating.</p>
+    <ul class="small">{% for u in r.unplaced %}<li><b>{{ u.label }}</b> ({{ u.people }} {{ "person" if u.people == 1 else "people" }}): {{ u.reason }}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+
+  <section class="card pad-lg" style="margin-top:16px">
+    <h3>The plan</h3>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Time</th><th>Room</th><th>Who</th><th class="r">People</th></tr></thead>
+      <tbody>
+        {% for l in r.locked %}<tr><td><b>{{ l.regs[0].slot_start|time }}</b></td><td>{{ l.regs[0].slot_venue }}</td><td>{{ l.label }} <span title="Changed by hand, kept">🔒</span></td><td class="r">{{ l.regs|length }}</td></tr>{% endfor %}
+        {% for p in r.placed %}<tr><td><b>{{ p.start.strftime('%I:%M %p').lstrip('0') }}</b> <small class="muted">{{ p.start.strftime('%a %d %b') }}</small></td><td>{{ p.room }}</td>
+          <td>{{ p.unit.label }}{% if p.unit.regs|length > 1 %} <small class="muted">({{ p.unit.regs|map(attribute='name')|join(", ") }})</small>{% endif %}</td><td class="r">{{ p.unit.regs|length }}</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+
+  <form method="post" action="{{ url_for('studio.slots', eid=e.id) }}" class="row" style="margin-top:18px;justify-content:flex-end">
+    {{ csrf_field() }}
+    {% for k, v in form.items() %}{% if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+    <a class="btn ghost" href="{{ url_for('studio.event', eid=e.id) }}#slots">Change settings</a>
+    <button class="btn brand lg" name="action" value="apply" {{ 'disabled' if not r.placed }}>{{ icon("clock", "ico sm") }}Allocate these slots &amp; notify</button>
+  </form>
+</div>
+{% endblock %}

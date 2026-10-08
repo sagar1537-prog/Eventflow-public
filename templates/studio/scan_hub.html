@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon with context %}
+{% block title %}Scan · {{ e.title }}{% endblock %}
+{% block assistant %}{% endblock %}
+{% block content %}
+<div class="page wide page-enter">
+  <div class="head-row"><div><h1>Scan QR</h1><p>{{ e.title }} · pick the task this phone is doing. Each task has its own scanner and only accepts its own QR, so nothing gets marked at the wrong desk.</p></div>
+    <a class="btn ghost" href="{{ url_for('studio.event', eid=e.id) }}">Back to event</a></div>
+  {% set counts = {"entry": stats.attended, "slot": stats.slot_in, "completion": stats.completed, "food": stats.fed} %}
+  <div class="scan-hub">
+    {% for slug, (kind, title, emoji, blurb, color) in info.items() %}
+    <a class="scan-card reveal lift" href="{{ url_for('studio.scan_station', eid=e.id, station=slug) }}" style="--sc: {{ color }}">
+      <span class="sc-n">{{ loop.index }}</span>
+      <span class="sc-emoji">{{ emoji }}</span>
+      <b>{{ title }}</b>
+      <small>{{ blurb }}</small>
+      <span class="sc-count"><b>{{ counts[slug] }}</b> / {{ stats.registered }} done</span>
+      <span class="sc-go">Open scanner {{ icon("right", "ico sm") }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  <p class="small muted center" style="margin-top:18px">Order for every participant: Entry → Slot (if they have one) → Completion → Food → their next event. A step is only accepted once the one before it is done.</p>
+</div>
+{% endblock %}

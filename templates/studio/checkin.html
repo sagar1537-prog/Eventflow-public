@@ -1,15 +1,27 @@
 {% extends "base.html" %}
 {% from "partials/macros.html" import icon, avatar with context %}
-{% block title %}Check-in · {{ e.title }}{% endblock %}
+{% block title %}{{ title }} · {{ e.title }}{% endblock %}
 {% block assistant %}{% endblock %}
 {% block content %}
-<div class="page wide page-enter">
-  <div class="head-row"><div><h1>Check-in desk</h1><p>{{ e.title }}. Every participant goes step by step: entry → event → food → next event. Each step has its own QR on their ticket.</p></div>
-    <a class="btn ghost" href="{{ url_for('studio.event', eid=e.id) }}">Back to event</a></div>
-  <div class="card station-card">
-    <div><b>This desk is the</b><small class="muted">Pick your station so a wrong QR is caught straight away. "Any step" accepts every QR.</small></div>
-    <div class="seg" role="radiogroup" aria-label="Station">{% for k, label in stations.items() %}<label><input type="radio" name="station" value="{{ k }}" {{ 'checked' if k == station }}>{{ {"": "🔁", "IN": "🚪", "DONE": "🎯", "FOOD": "🍽️"}[k] }} {{ label }}</label>{% endfor %}</div>
+<div class="page wide page-enter" style="--sc: {{ color }}">
+  <div class="head-row">
+    <div><span class="station-badge">{{ emoji }} {{ title }}</span><h1>{{ title }} scanner</h1><p>{{ e.title }} · {{ blurb }} This scanner only accepts <b>{{ title|lower }}</b> QR codes.</p></div>
+    <div class="row"><a class="btn ghost" href="{{ url_for('studio.checkin', eid=e.id) }}">{{ icon("scan", "ico sm") }}Other scanners</a>
+      <a class="btn ghost" href="{{ url_for('studio.event', eid=e.id) }}">Back to event</a></div>
   </div>
+
+  {% if station == 'SLOT' %}
+  <div class="card station-card">
+    <div><b>This desk is running</b><small class="muted">Only people booked into this exact time and room are accepted. Anyone else gets "wrong slot".</small></div>
+    {% if sessions %}
+    <select id="session" aria-label="Slot session">
+      <option value="">Choose the slot…</option>
+      {% for sx in sessions %}<option value="{{ sx.key }}" {{ 'selected' if sx.key == session }}>{{ sx.start|dt("%a %d %b") }} · {{ sx.start|time }}–{{ sx.end|time }} · {{ sx.room }}{% if e.kind == 'fest' %} · {{ sx.event }}{% endif %} ({{ sx.in }}/{{ sx.members|length }} in)</option>{% endfor %}
+    </select>
+    {% else %}<p class="muted mb-0">No slots allocated yet. Plan them under the event's <a class="link" href="{{ url_for('studio.event', eid=e.id) }}#slots">Slots</a> tab.</p>{% endif %}
+  </div>
+  {% endif %}
+
   <div class="scan-grid">
     <div class="stack">
       <div class="scanner">
@@ -18,26 +30,33 @@
       </div>
       <form class="card" id="manual" autocomplete="off">
         <label for="code">No camera? Type the ticket code</label>
-        <div class="row nw"><input id="code" placeholder="EVF-XXXXXX" style="text-transform:uppercase"><button class="btn" data-noload>Mark step</button></div>
-        <small class="muted">A typed code marks this desk's step (or, on "Any step", the participant's next step).</small>
+        <div class="row nw"><input id="code" placeholder="EVF-XXXXXX" style="text-transform:uppercase"><button class="btn" data-noload>Mark {{ title|lower }}</button></div>
       </form>
     </div>
     <div class="stack">
       <div class="scan-result" id="result" aria-live="assertive"><h3>Ready to scan</h3><p class="muted mb-0">Name, slot, team, food choice and their progress appear here after each scan.</p></div>
       <div class="card">
-        <div class="row between"><div><span class="big-n" id="att">{{ stats.attended }}</span><span class="muted"> / <span id="reg">{{ stats.registered }}</span> checked in</span></div>
-          <span class="pill green" id="pct">{{ stats.attendance_rate|pct }}</span></div>
-        <div class="meter" style="height:10px;margin-top:12px"><i id="bar" style="width:{{ stats.attendance_rate * 100 }}%;background:var(--green)"></i></div>
-        <div class="step-counts">
-          <div><span>🚪</span><b id="n-in">{{ stats.attended }}</b><small>entered</small></div>
-          <div><span>🎯</span><b id="n-done">{{ stats.completed }}</b><small>completed</small></div>
-          <div><span>🍽️</span><b id="n-food">{{ stats.fed }}</b><small>meals served</small></div>
+        <div class="step-counts four">
+          <div class="{{ 'on' if station == 'IN' }}"><span>🚪</span><b id="n-in">{{ stats.attended }}</b><small>entered</small></div>
+          <div class="{{ 'on' if station == 'SLOT' }}"><span>⏱️</span><b id="n-slot">{{ stats.slot_in }}</b><small>in their slot</small></div>
+          <div class="{{ 'on' if station == 'DONE' }}"><span>🎯</span><b id="n-done">{{ stats.completed }}</b><small>completed</small></div>
+          <div class="{{ 'on' if station == 'FOOD' }}"><span>🍽️</span><b id="n-food">{{ stats.fed }}</b><small>meals</small></div>
         </div>
+        <p class="small muted mb-0" style="margin-top:10px"><span id="reg">{{ stats.registered }}</span> confirmed participants</p>
       </div>
+      {% if station == 'SLOT' and sessions %}
+      <div class="card" id="expected-card" hidden>
+        <h3>Expected in this slot</h3>
+        {% for sx in sessions %}<div class="expected" data-session="{{ sx.key }}" hidden>
+          {% for m in sx.members %}<div class="suggest" data-code="{{ m.pass_code }}">{{ avatar(m.name, m.avatar, "sm") }}<span class="grow"><b>{{ m.name }}</b><small>{% if m.team_name %}Team {{ m.team_name }}{% endif %}</small></span>
+            <span class="pill {{ 'green' if m.slot_in_at else '' }}" data-state>{{ "In ✓" if m.slot_in_at else "Waiting" }}</span></div>{% endfor %}
+        </div>{% endfor %}
+      </div>
+      {% endif %}
       <div class="card">
-        <h3>Recent check-ins</h3>
+        <h3>Recent</h3>
         <div id="recent">
-          {% for r in recent %}<div class="suggest">{{ avatar(r.name, r.avatar, "sm") }}<span class="grow"><b>{{ r.name }}</b><small>{{ r.department or '' }}</small></span><small class="muted">{{ r.checkin_time|time }}</small></div>
+          {% for r in recent %}<div class="suggest">{{ avatar(r.name, r.avatar, "sm") }}<span class="grow"><b>{{ r.name }}</b><small>{{ r.ev_title if e.kind == 'fest' else (r.department or '') }}</small></span><small class="muted">{{ r.at|time }}</small></div>
           {% else %}<p class="muted mb-0" id="recent-empty">Nobody yet.</p>{% endfor %}
         </div>
       </div>
@@ -49,9 +68,17 @@
 <script src="{{ url_for('static', filename='vendor/html5-qrcode.min.js') }}"></script>
 <script>
 (() => {
-  const EID = {{ e.id }}, result = document.getElementById("result"), recent = document.getElementById("recent");
-  const STEP_ICON = { IN: "🚪", DONE: "🎯", FOOD: "🍽️" };
+  const EID = {{ e.id }}, STATION = "{{ station }}", result = document.getElementById("result"), recent = document.getElementById("recent");
+  const sessionSel = document.getElementById("session");
   let last = { c: "", t: 0 }, scanner = null, on = false;
+  const showExpected = () => {
+    const card = document.getElementById("expected-card");
+    if (!card || !sessionSel) return;
+    card.hidden = !sessionSel.value;
+    document.querySelectorAll(".expected").forEach((x) => { x.hidden = x.dataset.session !== sessionSel.value; });
+    const u = new URL(location.href); u.searchParams.set("session", sessionSel.value); history.replaceState(null, "", u);
+  };
+  sessionSel?.addEventListener("change", showExpected); showExpected();
   const beep = (ok) => { try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain();
     o.frequency.value = ok ? 880 : 220; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(.15, a.currentTime); o.start(); o.stop(a.currentTime + (ok ? .12 : .3)); } catch (e) {} };
   async function check(code) {
@@ -59,8 +86,8 @@
     if (!code || (code === last.c && Date.now() - last.t < 3000)) return;
     last = { c: code, t: Date.now() };
     let d;
-    const station = (document.querySelector('input[name="station"]:checked') || {}).value || "";
-    try { d = await EF.api("{{ url_for('studio.api_checkin') }}", { code, event_id: EID, station }); } catch (e) { d = { level: "error", message: e.message }; }
+    try { d = await EF.api("{{ url_for('studio.api_checkin') }}", { code, event_id: EID, station: STATION, session: sessionSel ? sessionSel.value : "" }); }
+    catch (e) { d = { level: "error", message: e.message }; }
     result.className = "scan-result " + (d.level || "error");
     const p = d.person, food = p ? { veg: "Veg", nonveg: "Non-veg", none: "No meal" }[p.food] : "";
     result.innerHTML = `<h3>${EF.esc(d.message)}</h3>` + (p ? `<p class="mb-0">${EF.esc(p.college || "")}${p.department ? " · " + EF.esc(p.department) : ""}${p.team ? " · Team " + EF.esc(p.team) : ""}</p>
@@ -70,17 +97,15 @@
     beep(d.ok);
     if (navigator.vibrate) navigator.vibrate(d.ok ? 60 : [80, 60, 80]);
     if (d.registered !== undefined) {
-      document.getElementById("att").textContent = d.attended; document.getElementById("reg").textContent = d.registered;
-      const pct = d.registered ? d.attended / d.registered : 0;
-      document.getElementById("pct").textContent = Math.round(pct * 100) + "%"; document.getElementById("bar").style.width = pct * 100 + "%";
-      document.getElementById("n-in").textContent = d.attended; document.getElementById("n-done").textContent = d.completed;
-      document.getElementById("n-food").textContent = d.fed;
+      [["n-in", d.attended], ["n-slot", d.slot_in], ["n-done", d.completed], ["n-food", d.fed]].forEach(([id, v]) => { const el = document.getElementById(id); if (el && v !== undefined) el.textContent = v; });
     }
     if (d.ok && p) {
       document.getElementById("recent-empty")?.remove();
       const row = document.createElement("div"); row.className = "suggest"; row.style.animation = "bubble-in .4s var(--spring)";
-      row.innerHTML = `<span class="av av-sm" style="--h:${(p.name.length * 47) % 360}">${EF.esc(p.name.split(" ").map((x) => x[0]).slice(0, 2).join(""))}</span><span class="grow"><b>${EF.esc(p.name)}</b><small>${EF.esc(p.department || "")}</small></span><small class="muted">${STEP_ICON[d.done] || ""} now</small>`;
+      row.innerHTML = `<span class="av av-sm" style="--h:${(p.name.length * 47) % 360}">${EF.esc(p.name.split(" ").map((x) => x[0]).slice(0, 2).join(""))}</span><span class="grow"><b>${EF.esc(p.name)}</b><small>${EF.esc(p.department || "")}</small></span><small class="muted">now</small>`;
       recent.prepend(row);
+      const exp = [...document.querySelectorAll(".expected:not([hidden]) .suggest")].find((x) => code.includes(x.dataset.code));
+      if (exp) { const st = exp.querySelector("[data-state]"); st.textContent = "In ✓"; st.classList.add("green"); }
     }
   }
   document.getElementById("manual").addEventListener("submit", (e) => { e.preventDefault(); const i = document.getElementById("code"); last = { c: "", t: 0 }; check(i.value); i.value = ""; i.focus(); });

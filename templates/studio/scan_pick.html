@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import icon with context %}
+{% block title %}Scan QR{% endblock %}
+{% block content %}
+<div class="page page-enter">
+  <div class="head-row"><div><h1>Scan QR</h1><p>Which event are you scanning for?</p></div></div>
+  {% include "studio/_nav.html" %}
+  <div class="stack">
+    {% for ev in events %}
+    <a class="card row between lift" href="{{ url_for('studio.checkin', eid=ev.id) }}" style="padding:16px 18px">
+      <span><b>{% if ev.fest %}{{ ev.fest }} · {% endif %}{{ ev.title }}</b><br><small class="muted">{{ ev.start_dt|dt }} · {{ ev.venue }}</small></span>
+      <span class="btn soft sm">{{ icon("scan", "ico sm") }}Scan</span></a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

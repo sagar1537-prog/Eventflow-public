@@ -406,6 +406,7 @@ def event_stats(event_id):
     a = (event_id, event_id)
     row = q(f"""SELECT COUNT(*) c, COALESCE(SUM(attended),0) a,
                       COALESCE(SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END),0) done,
+                      COALESCE(SUM(CASE WHEN slot_in_at IS NOT NULL THEN 1 ELSE 0 END),0) slot_in,
                       COUNT(DISTINCT CASE WHEN food_at IS NOT NULL THEN user_id END) fed,
                       COALESCE(SUM(CASE WHEN food_pref='veg' THEN 1 ELSE 0 END),0) v, COALESCE(SUM(CASE WHEN food_pref='nonveg' THEN 1 ELSE 0 END),0) nv,
                       COALESCE(SUM(CASE WHEN food_pref='none' THEN 1 ELSE 0 END),0) nf, COALESCE(SUM(CASE WHEN slot_start IS NOT NULL THEN 1 ELSE 0 END),0) slotted
@@ -418,7 +419,7 @@ def event_stats(event_id):
                 WHERE r.event_id IN {scope} AND r.status='confirmed' GROUP BY label ORDER BY c DESC LIMIT 8""", a)
     colleges = q(f"""SELECT COALESCE(NULLIF(u.college_name,''),'Not set') label, COUNT(*) c FROM registrations r JOIN users u ON u.id=r.user_id
                     WHERE r.event_id IN {scope} AND r.status='confirmed' GROUP BY label ORDER BY c DESC LIMIT 8""", a)
-    return {"registered": row["c"], "attended": row["a"], "completed": row["done"], "fed": row["fed"], "veg": row["v"], "nonveg": row["nv"], "nofood": row["nf"],
+    return {"registered": row["c"], "attended": row["a"], "completed": row["done"], "fed": row["fed"], "slot_in": row["slot_in"], "veg": row["v"], "nonveg": row["nv"], "nofood": row["nf"],
             "slotted": row["slotted"], "review": review, "cancelled": cancelled, "revenue": revenue, "fees": fees,
             "attendance_rate": (row["a"] / row["c"]) if row["c"] else 0,
             "dept": [dict(r) for r in dept], "colleges": [dict(r) for r in colleges]}

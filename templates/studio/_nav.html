@@ -1,6 +1,7 @@
 {% from "partials/macros.html" import icon with context %}
 <nav class="subnav" aria-label="Studio">
   <a class="{{ 'on' if active == 'overview' }}" href="{{ url_for('studio.overview') }}">{{ icon("chart", "ico sm") }}Overview{% if pending_payments %} <span class="b">{{ pending_payments }}</span>{% endif %}</a>
+  {% if side_events %}<a class="{{ 'on' if active == 'scan' }}" href="{{ url_for('studio.scan_pick') }}">{{ icon("scan", "ico sm") }}Scan QR</a>{% endif %}
   {% if is_owner %}
   <a class="{{ 'on' if active == 'new' }}" href="{{ url_for('studio.event_new') }}">{{ icon("plus", "ico sm") }}New event</a>
   <a class="{{ 'on' if active == 'posts' }}" href="{{ url_for('studio.posts') }}">{{ icon("image", "ico sm") }}Posts</a>

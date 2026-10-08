@@ -84,7 +84,8 @@
         <a href="{{ url_for('social.friends') }}">{{ icon("users") }}<span>Friends</span></a>
         {% endif %}
         <a href="{{ url_for('social.saved') }}">{{ icon("bookmark") }}<span>Saved</span></a>
-        {% if is_studio %}<a href="{{ url_for('studio.overview') }}">{{ icon("studio") }}<span>Studio</span></a>{% endif %}
+        {% if is_studio %}<a href="{{ url_for('studio.overview') }}">{{ icon("studio") }}<span>Studio</span></a>
+        <a href="{{ url_for('studio.scan_pick') }}">{{ icon("scan") }}<span>Scan QR</span></a>{% endif %}
         {% if g.user.role in ('college', 'student') %}<a href="{{ url_for('social.post_new') }}">{{ icon("plus-square") }}<span>New post</span></a>{% endif %}
         {% if g.user.role == 'dev' %}<a href="{{ url_for('dev.overview') }}">{{ icon("shield") }}<span>Developer</span></a>{% endif %}
         <a href="{{ url_for('social.settings') }}">{{ icon("settings") }}<span>Settings</span></a>

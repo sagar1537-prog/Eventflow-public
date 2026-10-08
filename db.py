@@ -311,6 +311,18 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+-- times a student can't make it (used by the slot planner)
+CREATE TABLE IF NOT EXISTS busy_times (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+  start_dt TEXT NOT NULL,
+  end_dt TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS ix_busy_user ON busy_times(user_id);
+
 -- uploaded files, used when running on PostgreSQL (Render's disk is wiped on restart). Locally: instance/uploads
 CREATE TABLE IF NOT EXISTS media_files (
   path TEXT PRIMARY KEY,
@@ -342,6 +354,9 @@ MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN cert_signature TEXT",
     "ALTER TABLE users ADD COLUMN cert_signatory TEXT",
     "ALTER TABLE users ADD COLUMN cert_signatory_title TEXT",
+    # slots: organiser exceptions are locked (the planner keeps them); slot check-in time
+    "ALTER TABLE registrations ADD COLUMN slot_locked INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE registrations ADD COLUMN slot_in_at TEXT",
     "CREATE INDEX IF NOT EXISTS ix_pay_bundle ON payments(bundle)",
 ]
 
@@ -654,7 +669,7 @@ def q(sql, args=(), one=False):
 
 ID_TABLES = {"users", "friendships", "events", "schedule_items", "coupons", "registrations", "payments", "announcements",
              "faqs", "posts", "post_media", "comments", "messages", "notifications", "reports", "chat_logs",
-             "event_winners", "fest_tracks", "audit_log"}
+             "event_winners", "fest_tracks", "audit_log", "busy_times"}
 
 
 def ex(sql, args=()):
@@ -723,7 +738,7 @@ TABLES = [  # creation order (parents first)
     "users", "password_resets", "follows", "friendships", "events", "fest_tracks", "event_staff", "schedule_items",
     "coupons", "registrations", "payments", "announcements", "faqs", "event_saves", "posts", "post_media", "post_likes",
     "post_saves", "comments", "messages", "notifications", "reports", "chat_logs", "event_winners", "settings", "audit_log",
-    "media_files",
+    "busy_times", "media_files",
 ]
 
 
@@ -770,7 +785,8 @@ def create_schema():
         state = q("""SELECT to_regclass('public.users') IS NOT NULL AS has_tables,
                             to_regclass('public.media_files') IS NOT NULL AS has_media,
                             EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
-                                    AND table_name='users' AND column_name='cert_signatory_title') AS current""", one=True)
+                                    AND table_name='registrations' AND column_name='slot_in_at')
+                            AND to_regclass('public.busy_times') IS NOT NULL AS current""", one=True)
         if not (state["has_tables"] and state["current"] and state["has_media"]):   # first run, or older schema
             print("  First start on this database: creating EventFlow's tables.", flush=True)
             run_sql(pg_schema())

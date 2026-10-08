@@ -3,9 +3,10 @@
 Every confirmed participant walks through the same ordered steps, each unlocked only after the one before it:
 
     1. Entry       scan the ENTRY QR at the gate             -> marks attendance for the whole event / fest
-    2. Event       scan the COMPLETION QR when the event ends -> unlocks the certificate for that event
-    3. Food        scan the FOOD QR at the food counter       -> only when the event serves meals
-    4. More events one completion QR per further event in the same fest (each unlocks its own certificate)
+    2. Slot        scan the SLOT QR at your own slot's desk   -> only accepted at that exact time + room
+    3. Event       scan the COMPLETION QR when the event ends -> unlocks the certificate for that event
+    4. Food        scan the FOOD QR at the food counter       -> only when the event serves meals
+    5. More events slot + completion QR per further event in the same fest (each unlocks its own certificate)
 
 Each step has its own QR code. A QR carries the step kind, the ticket code and a short signature, so a student can't
 make a "food" QR from their ticket code, and the server refuses any step that isn't the current one.
@@ -17,38 +18,43 @@ import re
 from flask import current_app, url_for
 
 import core
+import scheduler
 from db import q, ex
 
-KIND_NAMES = {"IN": "entry", "DONE": "event completion", "FOOD": "food"}
-STATIONS = {"": "Any step (auto)", "IN": "Entry gate", "DONE": "Event completion", "FOOD": "Food counter"}
-_PAYLOAD = re.compile(r"^EF:(IN|DONE|FOOD):([A-Z0-9-]{4,40}):([A-F0-9]{6,12})$")
+KIND_NAMES = {"IN": "entry", "SLOT": "slot", "DONE": "event completion", "FOOD": "food"}
+STATIONS = {"": "Any step (auto)", "IN": "Entry gate", "SLOT": "Slot desk", "DONE": "Event completion", "FOOD": "Food counter"}
+STATION_SLUGS = {"entry": "IN", "slot": "SLOT", "completion": "DONE", "food": "FOOD"}
+_PAYLOAD = re.compile(r"^EF:(IN|SLOT|DONE|FOOD):([A-Z0-9-]{4,40}):(?:([A-F0-9]{6}):)?([A-F0-9]{6,12})$")
 
 
 # ------------------------------------------------------------------ QR payloads
-def _sig(kind, code):
+def _sig(kind, code, extra=""):
     key = str(current_app.config["SECRET_KEY"]).encode()
-    return hmac.new(key, f"{kind}:{code}".encode(), hashlib.sha256).hexdigest()[:8].upper()
+    return hmac.new(key, f"{kind}:{code}:{extra}".encode(), hashlib.sha256).hexdigest()[:8].upper()
 
 
-def payload(kind, code):
-    """What the QR for one step contains, e.g. EF:FOOD:EVF-ABC123:1F2E3D4C."""
-    return f"EF:{kind}:{code}:{_sig(kind, code)}"
+def payload(kind, code, extra=""):
+    """What the QR for one step contains, e.g. EF:FOOD:EVF-ABC123:1F2E3D4C. A slot QR also carries its slot session:
+    EF:SLOT:EVF-ABC123:9A1B2C:1F2E3D4C, so it only works at that slot (and stops working if the slot is changed)."""
+    return f"EF:{kind}:{code}:{extra + ':' if extra else ''}{_sig(kind, code, extra)}"
 
 
 def parse(text):
-    """-> (kind or None, ticket code) from a scanned QR or a typed code. Raises ValueError for a forged QR."""
+    """-> (kind or None, ticket code, slot session or "") from a scanned QR or a typed code. Raises ValueError for a
+    forged QR."""
     text = (text or "").strip().upper()
     if text.startswith("HTTP"):
         text = text.rstrip("/").rsplit("/", 1)[-1]
     m = _PAYLOAD.match(text)
     if m:
-        kind, code, sig = m.groups()
-        if not hmac.compare_digest(sig, _sig(kind, code)):
+        kind, code, extra, sig = m.groups()
+        extra = extra or ""
+        if (kind == "SLOT") != bool(extra) or not hmac.compare_digest(sig, _sig(kind, code, extra)):
             raise ValueError("This QR code isn't valid. Ask the participant to open their ticket in EventFlow.")
-        return kind, code
+        return kind, code, extra
     if text.startswith("EF:"):
         raise ValueError("This QR code isn't valid. Ask the participant to open their ticket in EventFlow.")
-    return None, text
+    return None, text, ""
 
 
 # ------------------------------------------------------------------ steps
@@ -75,19 +81,25 @@ def steps(user_id, scope):
     out = [{"key": "entry", "kind": "IN", "title": "Check in at the entrance",
             "hint": f"Show this QR at the {ev['title']} entry desk" + (f" ({ev['venue']})" if ev["venue"] else ""),
             "reg": regs[0], "done_at": entry_at if entered else None, "done": entered, "icon": "🚪"}]
-    events = []
+    events = []                                    # each event: [slot step (if slotted), completion step]
     for r in regs:
-        slot = ""
+        group = []
         if r["slot_start"]:
-            slot = f"Your slot {core.parse_dt(r['slot_start']).strftime('%I:%M %p').lstrip('0')}" + \
-                   (f", {r['slot_venue']}" if r["slot_venue"] else "")
+            when = core.parse_dt(r["slot_start"])
+            label = f"{when.strftime('%I:%M %p').lstrip('0')}" + (f" · {r['slot_venue']}" if r["slot_venue"] else "")
+            group.append({"key": f"slot-{r['id']}", "kind": "SLOT", "title": f"Report to your slot for {r['title']}",
+                          "hint": f"{when.strftime('%a %d %b')}, {label} · show this QR at that slot's desk",
+                          "reg": r, "done_at": r["slot_in_at"], "done": bool(r["slot_in_at"]), "icon": "⏱️",
+                          "extra": scheduler.session_key(r["slot_start"], r["slot_venue"]), "slot_label": label})
+            hint = "Show this QR when you finish to get your certificate"
         else:
-            slot = f"Starts {core.parse_dt(r['start_dt']).strftime('%a %d %b, %I:%M %p').replace(' 0', ' ')}"
-        events.append({"key": f"event-{r['id']}", "kind": "DONE", "title": f"Take part in {r['title']}",
-                       "hint": f"{slot} · show this QR when you finish to get your certificate",
-                       "reg": r, "done_at": r["completed_at"], "done": bool(r["completed_at"]), "icon": "🎯",
-                       "cert": True})
-    out.append(events[0])
+            hint = (f"Starts {core.parse_dt(r['start_dt']).strftime('%a %d %b, %I:%M %p').replace(' 0', ' ')}"
+                    " · show this QR when you finish to get your certificate")
+        group.append({"key": f"event-{r['id']}", "kind": "DONE", "title": f"Complete {r['title']}", "hint": hint,
+                      "reg": r, "done_at": r["completed_at"], "done": bool(r["completed_at"]), "icon": "🎯",
+                      "cert": True})
+        events.append(group)
+    out.extend(events[0])
     wants_food = any(r["food_pref"] != "none" for r in regs)
     serves_food = (ev["meals_count"] or 0) > 0 or any((r["meals_count"] or 0) > 0 for r in regs)
     if wants_food and serves_food:
@@ -96,12 +108,13 @@ def steps(user_id, scope):
         out.append({"key": "food", "kind": "FOOD", "title": "Collect your meal",
                     "hint": f"{'Veg' if pref == 'veg' else 'Non-veg'} · show this QR at the food counter",
                     "reg": regs[0], "done_at": fed, "done": bool(fed), "icon": "🍽️"})
-    out.extend(events[1:])
+    for group in events[1:]:
+        out.extend(group)
     current = next((i for i, s in enumerate(out) if not s["done"]), None)
     for i, s in enumerate(out):
         s["n"] = i + 1
         s["state"] = "done" if s["done"] else ("current" if i == current else "locked")
-        s["qr"] = payload(s["kind"], s["reg"]["pass_code"]) if s["state"] == "current" else None
+        s["qr"] = payload(s["kind"], s["reg"]["pass_code"], s.get("extra", "")) if s["state"] == "current" else None
     return out
 
 
@@ -111,11 +124,13 @@ def signature(st):
 
 
 # ------------------------------------------------------------------ scanning
-def scan(text, station="", desk_event=None, can_staff=None, actor_id=None):
-    """Handle one scan at a check-in desk. Returns a dict for the JSON response."""
+def scan(text, station="", desk_event=None, can_staff=None, actor_id=None, session=""):
+    """Handle one scan at a desk. `station` is the desk's task (IN/SLOT/DONE/FOOD); a slot desk also says which slot
+    session (time + room) it is running, and only people booked into that session are accepted. Returns JSON data."""
     station = station if station in STATIONS else ""
+    session = (session or "").strip().upper()
     try:
-        kind, code = parse(text)
+        kind, code, extra = parse(text)
     except ValueError as e:
         return {"ok": False, "level": "error", "message": str(e)}
     r = q("""SELECT r.*, u.name, u.department, u.year, u.college_name, e.title, e.parent_id
@@ -150,6 +165,20 @@ def scan(text, station="", desk_event=None, can_staff=None, actor_id=None):
             return {"ok": False, "level": "error", "person": person, "message": f"No meal is included for {r['name']}."}
     elif want == "DONE":
         target = next((s for s in st if s["kind"] == "DONE" and s["reg"]["id"] == r["id"]), None)
+    elif want == "SLOT":
+        target = next((s for s in st if s["kind"] == "SLOT" and s["reg"]["id"] == r["id"]), None)
+        if not target:
+            return {"ok": False, "level": "error", "person": person, "message": f"{r['name']} has no slot for {r['title']}."}
+        if kind == "SLOT" and extra != target["extra"]:
+            return {"ok": False, "level": "error", "person": person,
+                    "message": f"Old slot QR. {r['name']}'s slot was changed to {target['slot_label']}. Ask them to reopen their ticket."}
+        if station == "SLOT":
+            if not session:
+                return {"ok": False, "level": "error", "person": person,
+                        "message": "Choose which slot this desk is running (time and room) first."}
+            if session != target["extra"]:
+                return {"ok": False, "level": "error", "person": person, "steps": _brief(st),
+                        "message": f"Wrong slot. {r['name']} is booked for {target['slot_label']}, not this one."}
     else:                                   # typed code at an "any step" desk: do whatever is next
         target = next((s for s in st if s["state"] == "current"), None)
         if not target:
@@ -168,6 +197,8 @@ def scan(text, station="", desk_event=None, can_staff=None, actor_id=None):
     marks = ",".join("?" * len(ids))
     if target["kind"] == "IN":
         ex(f"UPDATE registrations SET attended=1, checkin_time=? WHERE id IN ({marks}) AND attended=0", (now, *ids))
+    elif target["kind"] == "SLOT":
+        ex("UPDATE registrations SET slot_in_at=? WHERE id=?", (now, target["reg"]["id"]))
     elif target["kind"] == "DONE":
         ex("UPDATE registrations SET completed_at=?, attended=1, checkin_time=COALESCE(checkin_time, ?) WHERE id=?",
            (now, now, target["reg"]["id"]))
@@ -179,6 +210,9 @@ def scan(text, station="", desk_event=None, can_staff=None, actor_id=None):
     if target["kind"] == "IN":
         msg = f"Welcome, {r['name']}!"
         note = f"You're checked in at {title}. +{core.POINTS_ATTEND} points."
+    elif target["kind"] == "SLOT":
+        msg = f"{r['name']} is in the right slot ({target['slot_label']})."
+        note = f"You're checked in to your {title} slot ({target['slot_label']})."
     elif target["kind"] == "DONE":
         msg = f"{r['name']} completed {title}. Certificate unlocked!"
         note = f"You completed {title}. Your certificate is ready. +{core.POINTS_COMPLETE} points."

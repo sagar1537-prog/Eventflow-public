@@ -530,6 +530,12 @@
     $$(".story").forEach((b, k) => b.addEventListener("click", () => { idx = k; document.body.appendChild(viewer); document.body.style.overflow = "hidden"; start(); }));
   }
 
+  // ------------------------------------------------------------ simple live search over rows (data editor)
+  $$("[data-filter]").forEach((input) => input.addEventListener("input", () => {
+    const v = input.value.trim().toLowerCase();
+    $$(input.dataset.filter).forEach((row) => { row.hidden = v && !(row.dataset.q || row.textContent.toLowerCase()).includes(v); });
+  }));
+
   // ------------------------------------------------------------ ticket: next step appears by itself after a scan
   const journeyEl = $("[data-journey-poll]");
   if (journeyEl) {

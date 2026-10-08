@@ -613,8 +613,41 @@ def ticket(code):
     win = q("SELECT * FROM event_winners WHERE event_id=? AND user_id=?", (reg["event_id"], reg["user_id"]), one=True)
     steps = journey.steps(reg["user_id"], journey.scope_id(reg)) if reg["status"] == "confirmed" else []
     current = next((s for s in steps if s["state"] == "current"), None)
+    busy = q("""SELECT * FROM busy_times WHERE user_id=? AND (event_id IS NULL OR event_id=?) ORDER BY start_dt""",
+             (reg["user_id"], reg["event_id"]))
     return render_template("events/ticket.html", reg=reg, pay=pay, news=news, waitpos=waitpos, win=win, steps=steps,
-                           current=current, journey_sig=journey.signature(steps))
+                           current=current, journey_sig=journey.signature(steps), busy=busy)
+
+
+@bp.route("/ticket/<code>/busy", methods=["POST"])
+@core.login_required
+def busy_add(code):
+    """A student marks a time they can't make; the slot planner works around it."""
+    reg = _reg(code)
+    if reg["user_id"] != g.user["id"]:
+        abort(403)
+    s, e = core.parse_dt(request.form.get("start")), core.parse_dt(request.form.get("end"))
+    if not s or not e or e <= s:
+        flash("Pick a start and an end time (the end after the start).", "error")
+    elif (e - s).days > 3:
+        flash("Busy times can be at most 3 days long.", "error")
+    elif (scalar("SELECT COUNT(*) FROM busy_times WHERE user_id=?", (g.user["id"],)) or 0) >= 30:
+        flash("You already have 30 busy times. Remove some first.", "error")
+    else:
+        ex("INSERT INTO busy_times (user_id, event_id, start_dt, end_dt, note) VALUES (?,?,?,?,?)",
+           (g.user["id"], reg["event_id"], core.iso(s), core.iso(e), (request.form.get("note") or "").strip()[:80] or None))
+        flash("Saved. When the organisers plan slots, you won't get one in that time.", "success")
+    return redirect(url_for("events.ticket", code=code) + "#busy")
+
+
+@bp.route("/ticket/<code>/busy/<int:bid>/delete", methods=["POST"])
+@core.login_required
+def busy_delete(code, bid):
+    reg = _reg(code)
+    if reg["user_id"] != g.user["id"]:
+        abort(403)
+    ex("DELETE FROM busy_times WHERE id=? AND user_id=?", (bid, g.user["id"]))
+    return redirect(url_for("events.ticket", code=code) + "#busy")
 
 
 @bp.route("/api/journey/<code>")

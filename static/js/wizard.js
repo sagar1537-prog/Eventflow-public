@@ -40,6 +40,11 @@
   });
   S.rounds.forEach((r) => { r.key = r.key || uid("r"); });
   S.flow.forEach((x) => { if (x.type === "food") x.ref = x.ref || uid("f"); });
+  const timedMeal = () => S.flow.find((x) => x.type === "food" && x.start && x.end);
+  S.brk = (() => {
+    const f = timedMeal(), a = f && toDate(f.start), b = f && toDate(f.end);
+    return a && b ? { at: f.start.slice(11, 16), minutes: Math.max(5, Math.round((b - a) / 60000)) } : { at: "", minutes: 60 };
+  })();
   const ensureOneEvent = () => { if (kind === "fest" && !S.tracks.some((t) => t.events.length)) S.tracks[0].events.push(blankEvent()); };
   ensureOneEvent();
 
@@ -294,8 +299,17 @@
     const d0 = toDate(start);
     if (!d0) return false;
     S.rounds = [];
-    let t = d0.getTime();
+    let t = d0.getTime(), bS = null, bE = null;
+    if (S.brk.at) {
+      const [h, m] = S.brk.at.split(":").map(Number), b = new Date(d0);
+      b.setHours(h, m, 0, 0);
+      bS = b.getTime(); bE = bS + S.brk.minutes * 60000;
+      let f = S.flow.find((x) => x.type === "food");
+      if (!f) { f = { type: "food", ref: uid("f"), title: "Lunch", venue: "" }; S.flow.push(f); }
+      f.title = f.title || "Lunch"; f.start = fmtLocal(new Date(bS)); f.end = fmtLocal(new Date(bE));
+    }
     for (let i = 0; i < count; i++) {
+      if (bS !== null && t < bE && t + minutes * 60000 > bS) t = bE;      // no slot during the meal
       S.rounds.push({ key: uid("r"), label: "", start: fmtLocal(new Date(t)), end: fmtLocal(new Date(t + minutes * 60000)), venue: "" });
       t += (minutes + gap) * 60000;
     }
@@ -329,15 +343,21 @@
           <label class="field"><span>Minutes each</span><input type="number" min="5" max="1440" data-g="minutes" value="${S.rounds.length ? Math.max(5, Math.round((toDate(S.rounds[0].end) - toDate(S.rounds[0].start)) / 60000) || 60) : 60}"></label>
           <label class="field"><span>Break between</span><input type="number" min="0" max="600" data-g="gap" value="0"></label>
           <label class="field"><span>How many slots</span><input type="number" min="1" max="48" data-g="count" value="${S.rounds.length || 4}"></label>
+          <label class="field"><span>🍽️ Meal break at</span><input type="time" data-g="brk_at" value="${esc(S.brk.at)}"></label>
+          <label class="field"><span>Meal minutes</span><input type="number" min="5" max="300" data-g="brk_min" value="${S.brk.minutes}"></label>
         </div>
+        <p class="tiny muted mb-0">Meal break is optional. With one, no slot is made during the meal and the meal is added to the event day at that time.</p>
         <button type="button" class="btn brand sm" data-gen>⚡ ${S.rounds.length ? "Remake the slots" : "Make the slots"}</button>
       </div>`;
-      html += `<div class="round-list">${S.rounds.map((r, i) => `<div class="round" data-r="${i}"><span class="r-n">${i + 1}</span>
+      const meal = timedMeal(), mS = meal && toDate(meal.start), mE = meal && toDate(meal.end);
+      let breakShown = !meal || !mS || !mE;
+      const breakRow = () => `<div class="round-break">🍽️ ${esc(meal.title || "Meal")} · ${tm(meal.start)}–${tm(meal.end)} · no slots</div>`;
+      html += `<div class="round-list">${S.rounds.map((r, i) => `${!breakShown && toDate(r.start) >= mE ? (breakShown = true, breakRow()) : ""}<div class="round" data-r="${i}"><span class="r-n">${i + 1}</span>
           <input class="r-label" data-r-f="label" value="${esc(r.label || "")}" placeholder="Slot ${i + 1}" maxlength="40" aria-label="Slot name">
           <input type="datetime-local" data-r-f="start" value="${esc(r.start || "")}" aria-label="Slot ${i + 1} starts">
           <input type="datetime-local" data-r-f="end" value="${esc(r.end || "")}" aria-label="Slot ${i + 1} ends">
           <input class="r-venue" data-r-f="venue" value="${esc(r.venue || "")}" placeholder="Room (optional)" maxlength="80" aria-label="Room">
-          <button type="button" class="iconbtn" data-del-round aria-label="Remove slot ${i + 1}">✕</button></div>`).join("")}</div>`;
+          <button type="button" class="iconbtn" data-del-round aria-label="Remove slot ${i + 1}">✕</button></div>`).join("")}${!breakShown && S.rounds.length ? breakRow() : ""}</div>`;
       html += `<button type="button" class="btn ghost sm" data-add-round>＋ Add a slot</button>`;
       if (S.rounds.length && kind !== "fest") {
         const u = useOf("self"), [cls, txt] = capText(evs[0]);
@@ -394,6 +414,7 @@
       if (e.target.closest("[data-gen]")) {
         const g = (n) => sb.querySelector(`[data-g="${n}"]`).value;
         const minutes = Math.max(5, +g("minutes") || 60), gap = Math.max(0, +g("gap") || 0), count = Math.min(48, Math.max(1, +g("count") || 1));
+        S.brk = { at: g("brk_at") || "", minutes: Math.min(300, Math.max(5, +g("brk_min") || 60)) };
         if (S.rounds.length && !confirm(`Replace the ${S.rounds.length} slots with ${count} new ones?`)) return;
         if (!makeRounds(g("start"), minutes, gap, count)) { showErr(["Pick when the first slot starts."]); return; }
         renderSlots();

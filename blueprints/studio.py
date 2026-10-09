@@ -488,14 +488,23 @@ def event_delete(eid):
                      AND event_id IN (SELECT id FROM events WHERE id=? OR parent_id=?)""", (eid, eid))
     if e["parent_id"]:
         need(e["parent_id"], "lead")
-    if paid:
-        flash(f"{paid} people have paid for this event. Mark it closed or completed instead of deleting it.", "error")
+    force = request.form.get("force") == "1"
+    if paid and not force:
+        flash(f"{paid} people have paid for this event. Mark it closed or completed instead, or use Force delete to remove it anyway.", "error")
         return redirect(url_for("studio.event_edit", eid=eid))
+    # tell the people who had tickets, and remove their live notices, before everything is deleted
+    people = [r[0] for r in q("""SELECT DISTINCT r.user_id FROM registrations r JOIN events ev ON ev.id=r.event_id
+                                  WHERE (ev.id=? OR ev.parent_id=?) AND r.status IN ('confirmed','payment_review','pending_payment','waitlisted')""",
+                               (eid, eid))]
+    live.clear_scope(e["parent_id"] or eid)
     core.delete_upload(e["banner"])
     ex("DELETE FROM events WHERE parent_id=?", (eid,))
     ex("DELETE FROM events WHERE id=?", (eid,))
-    core.audit("event.delete", e["title"])
-    flash("Event deleted.", "info")
+    if people:
+        core.notify_many(people, "event", f"{e['title']} was cancelled by the organisers and removed. Contact them about any refund.",
+                         url_for("events.tickets"))
+    core.audit("event.force_delete" if paid else "event.delete", e["title"] + (f" ({paid} paid)" if paid else ""))
+    flash("Event deleted." + (f" {paid} paid ticket{'s' if paid != 1 else ''} removed; settle refunds directly." if paid else ""), "info")
     if e["parent_id"]:
         festlib.sync(e["parent_id"])
         return redirect(url_for("studio.event", eid=e["parent_id"]) + "#events")

@@ -161,6 +161,9 @@
   {% if editing and g.user.role in ('college', 'dev') %}
   <form method="post" action="{{ url_for('studio.event_delete', eid=e.id) }}" data-confirm="Delete {{ e.title }} and everything attached to it? This can't be undone." style="margin-top:28px" class="center">
     {{ csrf_field() }}<button class="btn danger-soft sm">{{ icon("trash", "ico sm") }}Delete {{ "fest and all its events" if is_fest else "event" }}</button></form>
+  <form method="post" action="{{ url_for('studio.event_delete', eid=e.id) }}" data-confirm="FORCE DELETE {{ e.title }}? This removes it even if people have paid: all tickets, payments, slots and certificates for it are deleted and participants are told. This can't be undone." style="margin-top:10px" class="center">
+    {{ csrf_field() }}<input type="hidden" name="force" value="1"><button class="btn danger sm">{{ icon("trash", "ico sm") }}Force delete (even if people paid)</button>
+    <p class="tiny muted" style="margin:6px 0 0">Use only when the event won't happen. Refunds are settled outside the app.</p></form>
   {% endif %}
 </div>
 {% endblock %}

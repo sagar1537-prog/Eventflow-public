@@ -136,13 +136,14 @@ def home():
                             "venue": e["venue"], "banner": url_for("media", rel=e["banner"]) if e["banner"] else None,
                             "fee": e["fee"], "fest": e["kind"] == "fest", "url": url_for("events.detail", eid=e["id"]),
                             "color": core.CATEGORIES.get(e["category"], "#7A8399")})
-    next_ticket = q("""SELECT r.*, e.title, e.start_dt, e.venue, f.title fest_title FROM registrations r JOIN events e ON e.id=r.event_id
+    next_ticket = q("""SELECT r.*, e.parent_id, e.title, e.start_dt, e.venue, f.title fest_title FROM registrations r JOIN events e ON e.id=r.event_id
                        LEFT JOIN events f ON f.id=e.parent_id
                        WHERE r.user_id=? AND r.status='confirmed' AND e.is_removed=0 AND COALESCE(f.is_removed, 0)=0
                        AND e.status IN ('open','closed') AND COALESCE(f.status, 'open') IN ('open','closed')
                        AND COALESCE(r.slot_end, e.end_dt) >= ? AND COALESCE(f.end_dt, e.end_dt) >= ?
-                       ORDER BY COALESCE(r.slot_start, e.start_dt) LIMIT 1""",
-                    (me["id"], core.now_iso(), core.now_iso()), one=True)
+                       ORDER BY COALESCE(r.slot_start, e.start_dt) LIMIT 25""",
+                    (me["id"], core.now_iso(), core.now_iso()))
+    next_ticket = _next_open_task(me["id"], next_ticket)
     return render_template("social/home.html", posts=posts, has_more=has_more, page=page, suggested=suggested,
                            stories=stories, stories_json=json.dumps(stories), next_ticket=next_ticket,
                            college_suggestions=suggest_colleges(me, 4), people_suggestions=suggest_people(me, 4),
@@ -172,6 +173,21 @@ def suggest_people(me, limit=6):
                  ORDER BY mutual DESC, (COALESCE(u.college_name,'')=?) DESC, (COALESCE(u.department,'')=?) DESC, u.id DESC
                  LIMIT ?""", a_f + a_f + a_ex + [me["college_name"] or "~", me["department"] or "~", limit])
     return rows
+
+
+def _next_open_task(user_id, rows):
+    """The first upcoming ticket whose event day still has a task left; once every task (entry, events, meals) is done
+    or skipped, that event day's reminder leaves the home page straight away instead of waiting for the end time."""
+    import journey
+    finished = {}
+    for r in rows:
+        scope = r["parent_id"] or r["event_id"]
+        if scope not in finished:
+            st = journey.steps(user_id, scope)
+            finished[scope] = bool(st) and journey.current(st) is None
+        if not finished[scope]:
+            return r
+    return None
 
 
 # ================================================================== explore & search
